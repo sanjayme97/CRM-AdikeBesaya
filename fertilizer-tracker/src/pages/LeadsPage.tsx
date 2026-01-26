@@ -12,7 +12,7 @@ import { LoadingSpinner } from '../components/LoadingSpinner';
 import { LeadModal } from '../components/LeadModal';
 import { useAuthStore } from '../store/authStore';
 import { useModalHistory } from '../hooks/useModalHistory';
-import { fetchLeads, deleteLead, createLead, updateLead, fetchLookups, fetchUsers } from '../services/sheetsService';
+import { fetchLeads, deleteLead, createLead, updateLead, fetchLookups, fetchUsers } from '../services/backend';
 import type { Lead, TalukWithDistrict } from '../types';
 
 const PAGE_SIZE = 50;

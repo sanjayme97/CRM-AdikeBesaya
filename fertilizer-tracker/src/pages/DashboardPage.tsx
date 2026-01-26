@@ -30,7 +30,7 @@ import {
   searchAcceptedQuotations,
   fetchPaymentsByQuoteId,
   type DashboardStats,
-} from '../services/sheetsService';
+} from '../services/backend';
 import type { Lead, FieldVisit, Quotation, Payment, TalukWithDistrict } from '../types';
 
 const emptyStats: DashboardStats = {

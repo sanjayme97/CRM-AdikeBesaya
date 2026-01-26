@@ -12,6 +12,17 @@ import type { TokenResponse } from '@react-oauth/google';
 import { useAuthStore } from '../store/authStore';
 import { verifySheetAccess, fetchUserRole } from '../services/authService';
 
+// Check which backend is being used
+const USE_SUPABASE = import.meta.env.VITE_USE_SUPABASE === 'true';
+
+// Dynamically import Supabase auth if needed
+let supabaseAuth: any = null;
+if (USE_SUPABASE) {
+  import('../services/auth/supabaseAuth').then(module => {
+    supabaseAuth = module;
+  });
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
   const { setUser, setAccessToken, setLoading, isLoading, logoutReason, clearLogoutReason } = useAuthStore();
@@ -25,7 +36,8 @@ export function LoginPage() {
     }
   }, [logoutReason, clearLogoutReason]);
 
-  const login = useGoogleLogin({
+  // Google Sheets auth flow (using @react-oauth/google)
+  const loginWithSheets = useGoogleLogin({
     onSuccess: async (tokenResponse: TokenResponse) => {
       setLoading(true);
       setError(null);
@@ -95,6 +107,42 @@ export function LoginPage() {
     scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
   });
 
+  // Supabase auth flow (redirect-based OAuth)
+  const loginWithSupabase = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      if (!supabaseAuth) {
+        throw new Error('Supabase auth module not loaded');
+      }
+
+      // Initiate OAuth redirect
+      const redirectUrl = await supabaseAuth.initiateGoogleLogin();
+
+      // Redirect to Google OAuth
+      window.location.href = redirectUrl;
+
+    } catch (err) {
+      console.error('Supabase login error:', err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'An error occurred during login. Please try again.'
+      );
+      setLoading(false);
+    }
+  };
+
+  // Unified login handler
+  const handleLogin = () => {
+    if (USE_SUPABASE) {
+      loginWithSupabase();
+    } else {
+      loginWithSheets();
+    }
+  };
+
   return (
     <div className="login-page">
       <div className="login-container">
@@ -115,7 +163,7 @@ export function LoginPage() {
                 <p>Signing you in...</p>
               </div>
             ) : (
-              <button onClick={() => login()} className="google-signin-btn">
+              <button onClick={handleLogin} className="google-signin-btn">
                 <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
                   <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
                   <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
