@@ -186,10 +186,53 @@ export async function getOrCreateSubfolder(
 // FILE UPLOAD
 // ============================================================================
 
+const USE_SUPABASE = import.meta.env.VITE_USE_SUPABASE === 'true';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://fcbvcwszzxpgilconwky.supabase.co';
+const R2_UPLOAD_URL = `${SUPABASE_URL}/functions/v1/upload-to-r2`;
+
 /**
- * Upload a file to Google Drive
+ * Upload a file to Cloudflare R2 via Supabase Edge Function
+ * Used when VITE_USE_SUPABASE=true
  */
-export async function uploadFile(
+async function uploadFileToR2(
+  file: File,
+  subfolder?: string,
+  customFileName?: string
+): Promise<UploadResult> {
+  const fileName = customFileName || file.name;
+
+  const formData = new FormData();
+  formData.append('file', new File([file], fileName, { type: file.type }));
+  if (subfolder) {
+    formData.append('subfolder', subfolder);
+  }
+
+  const response = await fetch(R2_UPLOAD_URL, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(`R2 upload failed: ${errorData.error || response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  return {
+    fileId: data.fileId,
+    fileName: data.fileName,
+    viewLink: data.viewLink,
+    downloadLink: data.downloadLink,
+    thumbnailLink: data.thumbnailLink,
+  };
+}
+
+/**
+ * Upload a file to Google Drive directly using user's OAuth token
+ * Used when VITE_USE_SUPABASE is disabled (traditional Google Sheets mode)
+ */
+async function uploadFileDirectly(
   file: File,
   subfolder?: string,
   customFileName?: string
@@ -237,7 +280,7 @@ export async function uploadFile(
       const newToken = await refreshToken();
       if (newToken) {
         useAuthStore.getState().setAccessToken(newToken);
-        return uploadFile(file, subfolder, customFileName);
+        return uploadFileDirectly(file, subfolder, customFileName);
       }
       throw new AuthError();
     }
@@ -253,6 +296,24 @@ export async function uploadFile(
     downloadLink: `https://drive.google.com/uc?export=download&id=${data.id}`,
     thumbnailLink: data.thumbnailLink,
   };
+}
+
+/**
+ * Upload a file to storage
+ * Routes based on VITE_USE_SUPABASE:
+ * - true: Upload to Cloudflare R2 via Edge Function
+ * - false: Upload to Google Drive directly with user OAuth
+ */
+export async function uploadFile(
+  file: File,
+  subfolder?: string,
+  customFileName?: string
+): Promise<UploadResult> {
+  if (USE_SUPABASE) {
+    return uploadFileToR2(file, subfolder, customFileName);
+  } else {
+    return uploadFileDirectly(file, subfolder, customFileName);
+  }
 }
 
 /**
@@ -282,14 +343,26 @@ export async function getFileInfo(fileId: string): Promise<DriveFile> {
 }
 
 export function getViewLink(fileId: string): string {
+  if (USE_SUPABASE) {
+    // For R2, fileId is the object key - return download URL
+    return `${SUPABASE_URL}/functions/v1/get-r2-download-url?key=${encodeURIComponent(fileId)}`;
+  }
   return `https://drive.google.com/file/d/${fileId}/view`;
 }
 
 export function getDownloadLink(fileId: string): string {
+  if (USE_SUPABASE) {
+    // For R2, fileId is the object key - get presigned URL from edge function
+    return `${SUPABASE_URL}/functions/v1/get-r2-download-url?key=${encodeURIComponent(fileId)}`;
+  }
   return `https://drive.google.com/uc?export=download&id=${fileId}`;
 }
 
 export function getThumbnailLink(fileId: string, size: number = 200): string {
+  if (USE_SUPABASE) {
+    // R2 doesn't have thumbnails, return download link
+    return getDownloadLink(fileId);
+  }
   return `https://drive.google.com/thumbnail?id=${fileId}&sz=w${size}`;
 }
 
