@@ -69,6 +69,28 @@ export async function fetchUserRole(email: string): Promise<string> {
 }
 
 /**
+ * Check if user email is in allowed_users table
+ */
+async function checkUserAllowed(email: string): Promise<{ allowed: boolean; role?: string }> {
+  const { data, error } = await supabase
+    .from('allowed_users')
+    .select('role, is_active')
+    .eq('email', email)
+    .eq('is_active', true)
+    .single();
+
+  if (error) {
+    // User not found in allowlist
+    if (error.code === 'PGRST116') {
+      return { allowed: false };
+    }
+    throw new Error(`Failed to check user access: ${error.message}`);
+  }
+
+  return { allowed: true, role: data.role };
+}
+
+/**
  * Create User object from Supabase session
  */
 export async function createUserFromSession(): Promise<User | null> {
@@ -85,14 +107,24 @@ export async function createUserFromSession(): Promise<User | null> {
   const name = user.user_metadata?.full_name || user.user_metadata?.name || email;
   const picture = user.user_metadata?.avatar_url || user.user_metadata?.picture;
 
-  // Fetch role from Supabase users table
-  const role = await fetchUserRole(email);
+  // Check if user is in allowed_users table
+  const { allowed, role } = await checkUserAllowed(email);
 
+  if (!allowed) {
+    // User is not authorized - sign them out immediately
+    await signOut();
+    throw new Error(
+      'Access Denied: Your email address is not authorized to access this system. ' +
+      'Please contact your manager to request access.'
+    );
+  }
+
+  // User is allowed - create user object with their role
   return {
     email,
     name,
     picture,
-    role,
+    role: role || 'Field Agronomist',
   };
 }
 

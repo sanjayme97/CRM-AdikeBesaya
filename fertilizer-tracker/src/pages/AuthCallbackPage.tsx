@@ -44,7 +44,7 @@ export function AuthCallbackPage() {
         // Redirect to login after showing error
         setTimeout(() => {
           navigate('/login');
-        }, 3000);
+        }, 6000);
 
       } finally {
         setLoading(false);
