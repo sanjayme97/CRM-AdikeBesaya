@@ -133,44 +133,59 @@ export function DashboardPage() {
     });
   };
 
-  // Click handlers for opening modals
-  const handleLeadClick = async (lead: Lead) => {
-    setSelectedLead(lead);
-    setModalType('lead');
+  // Click handlers for opening modals - fetch full objects from partial dashboard data
+  const handleLeadClick = async (partialLead: { id: string }) => {
+    const lead = await fetchLeadById(partialLead.id);
+    if (lead) {
+      setSelectedLead(lead);
+      setModalType('lead');
+    }
   };
 
-  const handleVisitClick = async (visit: FieldVisit) => {
-    setSelectedVisit(visit);
-    // Load the lead for this visit
-    const lead = await fetchLeadById(visit.leadId);
+  const handleVisitClick = async (partialVisit: { id: string; leadId: string }) => {
+    // For now, just fetch the lead - visit modal needs lead context
+    const lead = await fetchLeadById(partialVisit.leadId);
     if (lead) {
       setLeadMap(new Map([[lead.id, lead]]));
+      // Get visits for this lead to find the full visit object
+      const visits = await fetchVisitsByLeadId(partialVisit.leadId);
+      const fullVisit = visits.find(v => v.id === partialVisit.id);
+      if (fullVisit) {
+        setSelectedVisit(fullVisit);
+        setModalType('visit');
+      }
     }
-    setModalType('visit');
   };
 
-  const handleQuotationClick = async (quotation: Quotation) => {
-    setSelectedQuotation(quotation);
-    // Load the lead for this quotation
-    const lead = await fetchLeadById(quotation.leadId);
-    if (lead) {
-      setLeadMap(new Map([[lead.id, lead]]));
+  const handleQuotationClick = async (partialQuotation: { id: string; leadId: string }) => {
+    const quotation = await fetchQuotationById(partialQuotation.id);
+    if (quotation) {
+      setSelectedQuotation(quotation);
+      const lead = await fetchLeadById(partialQuotation.leadId);
+      if (lead) {
+        setLeadMap(new Map([[lead.id, lead]]));
+      }
+      setModalType('quotation');
     }
-    setModalType('quotation');
   };
 
-  const handlePaymentClick = async (payment: Payment) => {
-    setSelectedPayment(payment);
+  const handlePaymentClick = async (partialPayment: { id: string; quoteId: string }) => {
     // Load the quotation and lead for this payment
-    const quotation = await fetchQuotationById(payment.quoteId);
+    const quotation = await fetchQuotationById(partialPayment.quoteId);
     if (quotation) {
       setQuotationMap(new Map([[quotation.id, quotation]]));
       const lead = await fetchLeadById(quotation.leadId);
       if (lead) {
         setLeadMap(new Map([[lead.id, lead]]));
       }
+      // Get payments for this quotation to find the full payment
+      const payments = await fetchPaymentsByQuoteId(partialPayment.quoteId);
+      const fullPayment = payments.find(p => p.id === partialPayment.id);
+      if (fullPayment) {
+        setSelectedPayment(fullPayment);
+        setModalType('payment');
+      }
     }
-    setModalType('payment');
   };
 
   const closeModal = () => {

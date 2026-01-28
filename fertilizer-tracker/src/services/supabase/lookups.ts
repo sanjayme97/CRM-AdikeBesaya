@@ -1,5 +1,5 @@
 import { supabase, SupabaseError } from './client';
-import type { LookupData, TalukWithDistrict, DashboardStats } from '../../types';
+import type { LookupData, TalukWithDistrict } from '../../types';
 
 /**
  * Fetch all lookup values organized by category (matches sheetsService API)
@@ -134,29 +134,40 @@ export async function fetchDashboardStats(): Promise<any> {
   const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   const threeDaysFromNow = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
 
-  // Map database rows to proper types
+  // Map database rows to proper types (snake_case to camelCase)
   const mappedPayments = payments.map(p => ({
-    ...p,
+    id: p.id,
+    displayId: p.display_id,
+    quoteId: p.quote_id,
     paymentAmount: parseFloat(p.payment_amount),
-    paymentDate: p.payment_date
+    paymentDate: p.payment_date,
+    paymentMethod: p.payment_method,
+    paymentType: p.payment_type,
   }));
 
   const mappedQuotations = quotations.map(q => ({
-    ...q,
-    quoteAmount: parseFloat(q.quote_amount),
+    id: q.id,
     displayId: q.display_id,
-    validUntil: q.valid_until
+    leadId: q.lead_id,
+    quoteAmount: parseFloat(q.quote_amount),
+    validUntil: q.valid_until,
+    status: q.status,
   }));
 
   const mappedLeads = leads.map(l => ({
-    ...l,
+    id: l.id,
     displayId: l.display_id,
-    createdDate: l.created_date
+    farmerName: l.farmer_name,
+    createdDate: l.created_date,
+    district: l.district,
+    status: l.status,
   }));
 
   const mappedVisits = visits.map(v => ({
-    ...v,
-    scheduledDate: v.scheduled_date
+    id: v.id,
+    displayId: v.display_id,
+    leadId: v.lead_id,
+    scheduledDate: v.scheduled_date,
   }));
 
   // Revenue calculations

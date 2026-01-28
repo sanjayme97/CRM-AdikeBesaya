@@ -244,15 +244,19 @@ export interface VisitFilters {
 
 // Dashboard stats
 export interface DashboardStats {
-  totalLeads: number;
-  activeLeads: number;
-  totalVisits: number;
-  totalQuotes: number;
   totalRevenue: number;
-  conversionRate: number; // Lead to Sale conversion %
-  leadsThisMonth: number;
-  visitsThisMonth: number;
-  quotesThisMonth: number;
+  thisMonthRevenue: number;
+  pendingAmount: number;
+  collectionRate: number; // Collection rate %
+  totalLeads: number;
+  newLeads: number;
+  quotationsSent: number;
+  quotationsAccepted: number;
+  conversionRate: number; // Quote to acceptance conversion %
+  expiringQuotes: Array<{ id: string; displayId: string; validUntil: string; quoteAmount: number; leadId: string; status: string }>;
+  upcomingVisits: Array<{ id: string; displayId: string; scheduledDate: string; leadId: string }>;
+  recentLeads: Array<{ id: string; displayId: string; farmerName: string; createdDate: string; district: string; status: string }>;
+  recentPayments: Array<{ id: string; displayId: string; paymentAmount: number; paymentDate: string; paymentMethod: string; quoteId: string }>;
 }
 
 // ============================================

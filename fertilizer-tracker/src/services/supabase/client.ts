@@ -12,14 +12,17 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionUrl: true,
+    detectSessionInUrl: true,
   },
 });
 
 // Error handling helper
 export class SupabaseError extends Error {
-  constructor(message: string, public code?: string) {
+  code?: string;
+
+  constructor(message: string, code?: string) {
     super(message);
     this.name = 'SupabaseError';
+    this.code = code;
   }
 }
