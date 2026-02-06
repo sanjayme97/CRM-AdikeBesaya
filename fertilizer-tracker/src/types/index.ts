@@ -54,6 +54,7 @@ export interface FieldVisit {
   visitorId: string; // Email of visiting user
   visitOutcome?: string; // From Lookups sheet (Category='VisitOutcome')
   cropCondition?: string; // From Lookups sheet (Category='CropCondition')
+  identifiedProblems?: string[]; // Array of identified diseases/problems
   diagnosisNotes?: string;
   followUpDate?: string;
   status: string; // From Lookups sheet (Category='VisitStatus')
@@ -309,9 +310,9 @@ export const LEAD_COLUMNS = {
 
 // Column mapping for FieldVisits sheet
 // A=id, B=rowNumber, C=displayId, D=leadId, E=scheduledDate, F=actualDate,
-// G=visitorId, H=visitOutcome, I=cropCondition, J=diagnosisNotes,
-// K=followUpDate, L=status, M=visitedBy, N=quotationRequested,
-// O=assignedTo, P=attachmentFileId, Q=createdBy, R=createdDate, S=isDeleted, T=deletedBy, U=deletedDate, V=deleteReason
+// G=visitorId, H=visitOutcome, I=cropCondition, J=identifiedProblems, K=diagnosisNotes,
+// L=followUpDate, M=status, N=visitedBy, O=quotationRequested,
+// P=assignedTo, Q=attachmentFileId, R=createdBy, S=createdDate, T=isDeleted, U=deletedBy, V=deletedDate, W=deleteReason
 export const FIELD_VISIT_COLUMNS = {
   ID: 'A',
   ROW_NUMBER: 'B',
@@ -322,20 +323,45 @@ export const FIELD_VISIT_COLUMNS = {
   VISITOR_ID: 'G',
   VISIT_OUTCOME: 'H',
   CROP_CONDITION: 'I',
-  DIAGNOSIS_NOTES: 'J',
-  FOLLOW_UP_DATE: 'K',
-  STATUS: 'L',
-  VISITED_BY: 'M',
-  QUOTATION_REQUESTED: 'N',
-  ASSIGNED_TO: 'O',
-  ATTACHMENT_FILE_ID: 'P',
-  CREATED_BY: 'Q',
-  CREATED_DATE: 'R',
-  IS_DELETED: 'S',
-  DELETED_BY: 'T',
-  DELETED_DATE: 'U',
-  DELETE_REASON: 'V',
+  IDENTIFIED_PROBLEMS: 'J',
+  DIAGNOSIS_NOTES: 'K',
+  FOLLOW_UP_DATE: 'L',
+  STATUS: 'M',
+  VISITED_BY: 'N',
+  QUOTATION_REQUESTED: 'O',
+  ASSIGNED_TO: 'P',
+  ATTACHMENT_FILE_ID: 'Q',
+  CREATED_BY: 'R',
+  CREATED_DATE: 'S',
+  IS_DELETED: 'T',
+  DELETED_BY: 'U',
+  DELETED_DATE: 'V',
+  DELETE_REASON: 'W',
 } as const;
+
+// Disease and problem identification options (for field visits)
+export const CROP_PROBLEMS = [
+  { en: 'Physiological Disorder', kn: 'ಹಿಡಿಮುಂಡಿಗೆ' },
+  { en: 'Secondary & Micro Nutrients Deficiency', kn: 'ಸಮಗ್ರ ಪೋಷಕಾಂಶಗಳ ಕೊರತೆ' },
+  { en: 'Potash Deficiency', kn: 'ಪೊಟ್ಯಾಶ್ ಕೊರತೆ' },
+  { en: 'Excess Nitrogen', kn: 'ಹೆಚ್ಚುವರಿ ಸಾರಜನಕ' },
+  { en: 'Inflorescence Dieback', kn: 'ಹಿಂಗಾರ ಒಣಗುವಿಕೆ' },
+  { en: 'Fruit Dropping', kn: 'ಹರಳು ಉದುರುವುದು' },
+  { en: 'Nut Dropping', kn: 'ಕಾಯಿ ಉದುರುವುದು' },
+  { en: 'Nut Rot Disease', kn: 'ಅಡಿಕೆ ಕೊಳೆ ರೋಗ' },
+  { en: 'Leaf Spot Disease', kn: 'ಎಲೆ ಚುಕ್ಕೆ ರೋಗ' },
+  { en: 'Crown Rot Disease', kn: 'ಸುಳಿ ಕೊಳೆ ರೋಗ' },
+  { en: 'Ganoderma Disease', kn: 'ಅಣಬೆ ರೋಗ' },
+  { en: 'Root Grubs', kn: 'ಬೇರು ಹುಳು ಸಮಸ್ಯೆ' },
+  { en: 'Leaf Blight Disease', kn: 'ಎಲೆ ಸೊರಗು ರೋಗ' },
+  { en: 'Spindle Bug', kn: 'ಸುಳಿ ತಿಗಣೆ' },
+  { en: 'Red Mites', kn: 'ಕೆಂಪು ಹುಳ' },
+  { en: 'Yellow Leaf Disease', kn: 'ಹಳದಿ ಎಲೆ ರೋಗ' },
+  { en: 'Abnormal Growth Without Production', kn: 'ಅಡಿಕೆ ಮರದಲ್ಲಿ ಉತ್ಪಾದನೆಯಿಲ್ಲದೆ ಅಸಹಜ ಬೆಳವಣಿಗೆ' },
+  { en: 'Hormone Imbalance', kn: 'ಹಾರ್ಮೋನ್ ಅಸಮತೋಲನ' },
+  { en: 'Lack of Storage', kn: 'ಶೇಖರಣೆಯ ಕೊರತೆ' },
+  { en: 'Root Rot Disease', kn: 'ಬೇರು ಕೊಳೆ ರೋಗ' },
+] as const;
 
 // Column mapping for Quotations sheet
 // A=id, B=rowNumber, C=displayId, D=leadId, E=visitId, F=quoteDate,

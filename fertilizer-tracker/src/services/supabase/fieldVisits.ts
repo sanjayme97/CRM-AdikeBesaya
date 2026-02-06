@@ -16,6 +16,7 @@ function mapFieldVisitFromDB(row: any): FieldVisit {
     visitorId: row.visitor_id,
     visitOutcome: row.visit_outcome || '',
     cropCondition: row.crop_condition || '',
+    identifiedProblems: row.identified_problems || [],
     diagnosisNotes: row.diagnosis_notes || '',
     followUpDate: row.follow_up_date || '',
     status: row.status,
@@ -45,6 +46,7 @@ function mapFieldVisitToDB(visit: Partial<FieldVisit>): any {
   if (visit.visitorId) mapped.visitor_id = visit.visitorId;
   if (visit.visitOutcome !== undefined) mapped.visit_outcome = visit.visitOutcome || null;
   if (visit.cropCondition !== undefined) mapped.crop_condition = visit.cropCondition || null;
+  if (visit.identifiedProblems !== undefined) mapped.identified_problems = visit.identifiedProblems;
   if (visit.diagnosisNotes !== undefined) mapped.diagnosis_notes = visit.diagnosisNotes || null;
   if (visit.followUpDate !== undefined) mapped.follow_up_date = visit.followUpDate || null;
   if (visit.status) mapped.status = visit.status;

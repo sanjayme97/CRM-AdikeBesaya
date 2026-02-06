@@ -9,26 +9,29 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useModalStore } from '../store/modalStore';
-import { useRef, useEffect, useCallback, type ReactNode } from 'react';
+import { useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react';
+import { getAccessibleNavItems, type UserRole} from '../config/roles';
 
 interface LayoutProps {
   children: ReactNode;
 }
-
-// Navigation tabs in order
-const NAV_TABS = [
-  '/dashboard',
-  '/leads',
-  '/visits',
-  '/quotations',
-  '/payments',
-];
 
 export function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuthStore();
   const isModalOpen = useModalStore((state) => state.isModalOpen);
+
+  // Get accessible navigation items based on user's role
+  const accessibleNavItems = useMemo(() => {
+    if (!user) return [];
+    return getAccessibleNavItems(user.role as UserRole);
+  }, [user]);
+
+  // Get accessible tabs for swipe navigation
+  const accessibleTabs = useMemo(() => {
+    return accessibleNavItems.map(item => item.path);
+  }, [accessibleNavItems]);
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -39,10 +42,10 @@ export function Layout({ children }: LayoutProps) {
   const touchEndY = useRef<number>(0);
   const mainContentRef = useRef<HTMLElement>(null);
 
-  // Get current tab index
+  // Get current tab index (from accessible tabs only)
   const getCurrentTabIndex = useCallback(() => {
-    return NAV_TABS.findIndex(tab => location.pathname === tab);
-  }, [location.pathname]);
+    return accessibleTabs.findIndex(tab => location.pathname === tab);
+  }, [location.pathname, accessibleTabs]);
 
   // Handle swipe navigation
   const handleSwipe = useCallback(() => {
@@ -60,14 +63,14 @@ export function Layout({ children }: LayoutProps) {
     const currentIndex = getCurrentTabIndex();
     if (currentIndex === -1) return;
 
-    if (diffX > 0 && currentIndex < NAV_TABS.length - 1) {
+    if (diffX > 0 && currentIndex < accessibleTabs.length - 1) {
       // Swipe left - go to next tab
-      navigate(NAV_TABS[currentIndex + 1]);
+      navigate(accessibleTabs[currentIndex + 1]);
     } else if (diffX < 0 && currentIndex > 0) {
       // Swipe right - go to previous tab
-      navigate(NAV_TABS[currentIndex - 1]);
+      navigate(accessibleTabs[currentIndex - 1]);
     }
-  }, [getCurrentTabIndex, navigate, isModalOpen]);
+  }, [getCurrentTabIndex, navigate, isModalOpen, accessibleTabs]);
 
   // Touch event handlers
   useEffect(() => {
@@ -103,36 +106,15 @@ export function Layout({ children }: LayoutProps) {
             <span>Adike Besaya</span>
           </div>
           <nav className="nav-tabs">
-            <Link
-              to="/dashboard"
-              className={`nav-tab ${isActive('/dashboard') ? 'active' : ''}`}
-            >
-              Dashboard
-            </Link>
-            <Link
-              to="/leads"
-              className={`nav-tab ${isActive('/leads') ? 'active' : ''}`}
-            >
-              Leads
-            </Link>
-            <Link
-              to="/visits"
-              className={`nav-tab ${isActive('/visits') ? 'active' : ''}`}
-            >
-              Visits
-            </Link>
-            <Link
-              to="/quotations"
-              className={`nav-tab ${isActive('/quotations') ? 'active' : ''}`}
-            >
-              Quotations
-            </Link>
-            <Link
-              to="/payments"
-              className={`nav-tab ${isActive('/payments') ? 'active' : ''}`}
-            >
-              Payments
-            </Link>
+            {accessibleNavItems.map((item) => (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`nav-tab ${isActive(item.path) ? 'active' : ''}`}
+              >
+                {item.label}
+              </Link>
+            ))}
           </nav>
         </div>
 

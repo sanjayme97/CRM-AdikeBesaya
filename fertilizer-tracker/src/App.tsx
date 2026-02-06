@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { LoginPage } from './pages/LoginPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
@@ -7,7 +7,8 @@ import { LeadsPage } from './pages/LeadsPage';
 import { FieldVisitsPage } from './pages/FieldVisitsPage';
 import { QuotationsPage } from './pages/QuotationsPage';
 import { PaymentsPage } from './pages/PaymentsPage';
-import { ProtectedRoute } from './components/ProtectedRoute';
+import { RoleProtectedRoute } from './components/RoleProtectedRoute';
+import { RoleBasedRedirect } from './components/RoleBasedRedirect';
 import { SessionExpiryWarning } from './components/SessionExpiryWarning';
 
 function App() {
@@ -36,53 +37,53 @@ function App() {
           <Route
             path="/dashboard"
             element={
-              <ProtectedRoute>
+              <RoleProtectedRoute requiredPage="/dashboard">
                 <DashboardPage />
-              </ProtectedRoute>
+              </RoleProtectedRoute>
             }
           />
 
           <Route
             path="/leads"
             element={
-              <ProtectedRoute>
+              <RoleProtectedRoute requiredPage="/leads">
                 <LeadsPage />
-              </ProtectedRoute>
+              </RoleProtectedRoute>
             }
           />
 
           <Route
             path="/visits"
             element={
-              <ProtectedRoute>
+              <RoleProtectedRoute requiredPage="/visits">
                 <FieldVisitsPage />
-              </ProtectedRoute>
+              </RoleProtectedRoute>
             }
           />
 
           <Route
             path="/quotations"
             element={
-              <ProtectedRoute>
+              <RoleProtectedRoute requiredPage="/quotations">
                 <QuotationsPage />
-              </ProtectedRoute>
+              </RoleProtectedRoute>
             }
           />
 
           <Route
             path="/payments"
             element={
-              <ProtectedRoute>
+              <RoleProtectedRoute requiredPage="/payments">
                 <PaymentsPage />
-              </ProtectedRoute>
+              </RoleProtectedRoute>
             }
           />
 
-          {/* Default redirect */}
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          {/* Default redirect - based on user role */}
+          <Route path="/" element={<RoleBasedRedirect />} />
 
-          {/* 404 - redirect to dashboard */}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          {/* 404 - redirect to user's default page */}
+          <Route path="*" element={<RoleBasedRedirect />} />
         </Routes>
       </BrowserRouter>
     </GoogleOAuthProvider>

@@ -79,3 +79,26 @@ The Google Sheets schema (column headers) is initialized from Google Apps Script
 3. **Update Services**: Update parse/create/update functions in `sheetsService.ts` to handle new columns
 
 The column order in `types/index.ts` must match the Apps Script schema exactly.
+
+## Backend Support & Limitations
+
+### Dual Backend Architecture
+This application supports both Google Sheets (legacy) and Supabase backends. Toggle via `.env`:
+```
+VITE_USE_SUPABASE=false  # Use Google Sheets
+VITE_USE_SUPABASE=true   # Use Supabase (recommended)
+```
+
+### Google Sheets Backend - Not Implemented Features
+
+The following features are **ONLY available in Supabase** and **NOT implemented for Google Sheets**:
+
+#### Field Visits
+- **identifiedProblems** field (Column J in FieldVisits sheet)
+  - Stores array of selected disease/problem identifiers
+  - UI shows 20 crop problems/diseases with English and Kannada labels
+  - Data structure: `string[]` array of problem keys
+  - Not implemented in `sheetsService.ts` parse/create/update functions
+  - Apps Script schema does not include this column
+
+**Note for future changes**: When adding new features, if they are Supabase-only, document them here and in `fertilizer-tracker/README.md`.

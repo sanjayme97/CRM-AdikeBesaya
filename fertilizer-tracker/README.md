@@ -77,6 +77,30 @@ src/
 └── utils/          # Utility functions
 ```
 
+## Backend Support
+
+This application supports two backends:
+- **Google Sheets** (legacy)
+- **Supabase** (recommended)
+
+Toggle between backends using the `.env` variable:
+```
+VITE_USE_SUPABASE=false  # Use Google Sheets
+VITE_USE_SUPABASE=true   # Use Supabase
+```
+
+### Google Sheets Backend Limitations
+
+The following features are **only available when using Supabase backend** and are **NOT implemented** for Google Sheets:
+
+#### Field Visits
+- **Identified Problems/Diseases** - Checkbox selection for crop problems and diseases (20 options with English and Kannada labels)
+  - Not stored in Google Sheets schema
+  - UI will show but data will not persist
+  - Schema column `identifiedProblems` (J) is not implemented in sheetsService.ts
+
+To use these features, switch to Supabase backend by setting `VITE_USE_SUPABASE=true` in your `.env` file.
+
 ## Documentation
 
 - [Google Cloud Setup](../docs/google-cloud-setup.md)

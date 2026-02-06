@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { FieldVisit, Lead } from '../types';
+import { CROP_PROBLEMS } from '../types';
 import { uploadFile, getDownloadLink } from '../services/driveService';
 
 interface FieldVisitModalProps {
@@ -33,6 +34,7 @@ const initialFormData = {
   visitorId: '',
   visitOutcome: '',
   cropCondition: '',
+  identifiedProblems: [] as string[],
   diagnosisNotes: '',
   followUpDate: '',
   status: 'Scheduled',
@@ -85,6 +87,7 @@ export function FieldVisitModal({
         visitorId: visit.visitorId || '',
         visitOutcome: visit.visitOutcome || '',
         cropCondition: visit.cropCondition || '',
+        identifiedProblems: visit.identifiedProblems || [],
         diagnosisNotes: visit.diagnosisNotes || '',
         followUpDate: visit.followUpDate ? visit.followUpDate.split('T')[0] : '',
         status: visit.status || 'Scheduled',
@@ -227,6 +230,11 @@ export function FieldVisitModal({
     }
   };
 
+  // Handle print
+  const handlePrint = () => {
+    window.print();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -296,12 +304,24 @@ export function FieldVisitModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        {/* Print-only header */}
+        <div className="print-only-header">
+          <h1>Fertilizer Tracker CRM</h1>
+          <p>Field Visit Report</p>
+          <p className="print-date">Printed on: {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}</p>
+        </div>
+
         <div className="modal-header">
           <h2>{title}</h2>
           {visit && mode !== 'add' && (
             <span className="visit-display-id">{visit.displayId}</span>
           )}
-          <button className="modal-close" onClick={onClose}>
+          {isReadOnly && (
+            <button className="btn-print no-print" onClick={handlePrint} title="Print Visit Details">
+              🖨️ Print
+            </button>
+          )}
+          <button className="modal-close no-print" onClick={onClose}>
             &times;
           </button>
         </div>
@@ -546,6 +566,52 @@ export function FieldVisitModal({
                 </select>
               </div>
 
+              {/* Identified Problems - Checkboxes */}
+              <div className="form-group full-width">
+                <label>Identified Problems / Diseases (ಗುರುತಿಸಲಾದ ಸಮಸ್ಯೆಗಳು / ರೋಗಗಳು)</label>
+                <div className={`problems-grid ${isReadOnly ? 'disabled' : ''}`}>
+                  {CROP_PROBLEMS.map((problem) => {
+                    const problemKey = problem.en;
+                    const isChecked = isReadOnly && visit
+                      ? (visit.identifiedProblems || []).includes(problemKey)
+                      : formData.identifiedProblems.includes(problemKey);
+
+                    return (
+                      <label key={problemKey} className="problem-checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (!isReadOnly) {
+                              const checked = e.target.checked;
+                              setFormData((prev) => ({
+                                ...prev,
+                                identifiedProblems: checked
+                                  ? [...prev.identifiedProblems, problemKey]
+                                  : prev.identifiedProblems.filter((p) => p !== problemKey),
+                              }));
+                            }
+                          }}
+                          disabled={isReadOnly}
+                        />
+                        <span className="problem-text">
+                          <span className="problem-en">{problem.en}</span>
+                          <span className="problem-kn">{problem.kn}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {!isReadOnly && formData.identifiedProblems.length === 0 && (
+                  <p className="help-text">Select all problems that apply</p>
+                )}
+                {(isReadOnly || formData.identifiedProblems.length > 0) && (
+                  <p className="selected-count">
+                    {isReadOnly && visit ? visit.identifiedProblems?.length || 0 : formData.identifiedProblems.length} problem(s) selected
+                  </p>
+                )}
+              </div>
+
               <div className="form-group full-width">
                 <label htmlFor="diagnosisNotes">Diagnosis Notes</label>
                 <textarea
@@ -556,7 +622,11 @@ export function FieldVisitModal({
                   disabled={isReadOnly}
                   rows={3}
                   placeholder="Enter observations, diagnosis, and notes from the field visit..."
+                  className="screen-only"
                 />
+                <div className="print-only-text">
+                  {isReadOnly && visit ? visit.diagnosisNotes : formData.diagnosisNotes}
+                </div>
               </div>
 
               {/* File Attachment */}
@@ -801,6 +871,18 @@ export function FieldVisitModal({
           box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
         }
 
+        .print-only-header {
+          display: none;
+        }
+
+        .print-only-text {
+          display: none;
+        }
+
+        .screen-only {
+          display: block;
+        }
+
         .modal-header {
           display: flex;
           align-items: center;
@@ -826,6 +908,24 @@ export function FieldVisitModal({
           border-radius: 12px;
           font-size: 13px;
           font-weight: 500;
+        }
+
+        .btn-print {
+          background: #4caf50;
+          color: white;
+          border: none;
+          padding: 8px 16px;
+          border-radius: 6px;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .btn-print:hover {
+          background: #43a047;
         }
 
         .modal-close {
@@ -1269,6 +1369,85 @@ export function FieldVisitModal({
           font-weight: 500;
         }
 
+        /* Problem Identification Checkboxes */
+        .problems-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 10px;
+          padding: 12px;
+          background: #f8f9fa;
+          border: 1px solid #e9ecef;
+          border-radius: 8px;
+        }
+
+        .problems-grid.disabled {
+          background: #f5f5f5;
+        }
+
+        .problem-checkbox-label {
+          display: flex;
+          align-items: flex-start;
+          gap: 6px;
+          padding: 6px 10px;
+          background: white;
+          border: 1px solid #e0e0e0;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .problem-checkbox-label:hover:not(.disabled) {
+          border-color: #667eea;
+          background: #f8f9ff;
+        }
+
+        .problem-checkbox-label input[type="checkbox"] {
+          margin-top: 3px;
+          width: 18px;
+          height: 18px;
+          flex-shrink: 0;
+          cursor: pointer;
+        }
+
+        .problem-checkbox-label input[type="checkbox"]:disabled {
+          cursor: default;
+        }
+
+        .problem-text {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          flex: 1;
+          min-width: 0;
+        }
+
+        .problem-en {
+          font-size: 13px;
+          font-weight: 500;
+          color: #333;
+          line-height: 1.3;
+        }
+
+        .problem-kn {
+          font-size: 12px;
+          color: #666;
+          line-height: 1.3;
+        }
+
+        .help-text {
+          font-size: 12px;
+          color: #666;
+          font-style: italic;
+          margin: 8px 0 0 0;
+        }
+
+        .selected-count {
+          font-size: 13px;
+          color: #667eea;
+          font-weight: 500;
+          margin: 8px 0 0 0;
+        }
+
         .btn-cancel {
           background: white;
           border: 1px solid #ddd;
@@ -1329,6 +1508,336 @@ export function FieldVisitModal({
           .btn-cancel,
           .btn-save {
             width: 100%;
+          }
+
+          .problems-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        /* Print Styles */
+        @media print {
+          /* Remove default page margins */
+          @page {
+            margin: 0.3cm;
+            size: A4;
+          }
+
+          /* Hide everything except the modal */
+          body * {
+            visibility: hidden;
+          }
+
+          .modal-overlay,
+          .modal-overlay * {
+            visibility: visible;
+          }
+
+          body {
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+
+          .modal-overlay {
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            background: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: block !important;
+          }
+
+          .modal-content {
+            max-width: 100% !important;
+            max-height: none !important;
+            height: auto !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            display: block !important;
+          }
+
+          .print-only-header {
+            display: block;
+            text-align: center;
+            padding: 5px 0 8px 0;
+            border-bottom: 2px solid #333;
+            margin: 0 0 10px 0;
+          }
+
+          .print-only-header h1 {
+            margin: 0 0 3px 0;
+            font-size: 20px;
+            color: #333;
+          }
+
+          .print-only-header p {
+            margin: 2px 0;
+            font-size: 12px;
+            color: #666;
+          }
+
+          .print-date {
+            font-size: 9px !important;
+            color: #999 !important;
+          }
+
+          .modal-header {
+            border-bottom: 1px solid #333;
+            padding: 5px 0 6px 0;
+            margin-bottom: 8px;
+          }
+
+          .modal-header h2 {
+            font-size: 16px;
+            margin: 0;
+          }
+
+          .visit-display-id {
+            background: #333;
+            font-size: 11px;
+            padding: 3px 10px;
+          }
+
+          .no-print,
+          .modal-close,
+          .btn-print,
+          .modal-footer {
+            display: none !important;
+          }
+
+          .modal-body {
+            padding: 0 !important;
+            overflow: visible !important;
+            margin: 0 !important;
+            max-height: none !important;
+            height: auto !important;
+            min-height: 0 !important;
+            flex: none !important;
+            display: block !important;
+          }
+
+          .modal-header {
+            margin: 0;
+            padding: 8px 0;
+          }
+
+          .modal-form {
+            display: block !important;
+            flex: none !important;
+            min-height: 0 !important;
+          }
+
+          .form-section {
+            page-break-inside: auto;
+            page-break-before: auto;
+            page-break-after: auto;
+            margin-bottom: 8px;
+            padding: 0;
+          }
+
+          /* Allow sections with long content to break naturally */
+          .form-section:not(:last-child) {
+            page-break-before: auto !important;
+            page-break-after: auto;
+          }
+
+          .form-section h3 {
+            color: #333;
+            border-bottom: 1px solid #333;
+            font-size: 14px;
+            margin: 0 0 6px 0;
+            padding-bottom: 3px;
+          }
+
+          /* Prevent orphaned sections */
+          .form-section:not(:last-child) {
+            orphans: 3;
+            widows: 3;
+          }
+
+          .form-grid {
+            gap: 6px;
+            margin-bottom: 4px;
+          }
+
+          .form-group {
+            margin-bottom: 3px;
+          }
+
+          .form-group.full-width {
+            margin-bottom: 4px;
+          }
+
+          .form-group label {
+            font-weight: bold;
+            color: #333;
+            font-size: 11px;
+            margin: 0 0 1px 0;
+            padding: 0;
+            line-height: 1.2;
+          }
+
+          .form-group input,
+          .form-group select,
+          .form-group textarea {
+            border: none;
+            background: none;
+            padding: 1px 0;
+            font-size: 11px;
+            color: #000;
+            line-height: 1.3;
+            margin: 0;
+            overflow: visible;
+          }
+
+          .form-group select {
+            height: auto;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+          }
+
+          /* Hide textarea on print, show text content instead */
+          .screen-only {
+            display: none !important;
+          }
+
+          .print-only-text {
+            display: block !important;
+            width: 100% !important;
+            white-space: pre-wrap !important;
+            word-wrap: break-word !important;
+            border: 1px solid #ddd !important;
+            padding: 4px !important;
+            line-height: 1.4 !important;
+            font-size: 11px !important;
+            color: #000 !important;
+            min-height: 20px !important;
+          }
+
+          .metadata-value {
+            padding: 1px 0;
+            font-size: 11px;
+            line-height: 1.3;
+          }
+
+          .lead-info-readonly {
+            background: none;
+            border: 1px solid #ddd;
+            padding: 6px;
+          }
+
+          .lead-info-row {
+            padding: 2px 0;
+          }
+
+          .lead-info-row .label {
+            font-size: 11px;
+          }
+
+          .lead-info-row .value {
+            font-size: 11px;
+          }
+
+          .selected-lead-info {
+            background: none;
+            border: 1px solid #ddd;
+            padding: 6px;
+          }
+
+          .status-badge {
+            border: 1px solid #333;
+          }
+
+          .problems-grid {
+            background: none;
+            border: 1px solid #ddd;
+            padding: 6px;
+            gap: 4px;
+            page-break-inside: auto;
+          }
+
+          .problem-checkbox-label {
+            border: 1px solid #ddd;
+            padding: 3px 6px;
+            background: none;
+            page-break-inside: avoid;
+          }
+
+          .problem-checkbox-label input[type="checkbox"] {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            width: 14px;
+            height: 14px;
+            margin-top: 1px;
+          }
+
+          .problem-en {
+            font-size: 10px;
+            line-height: 1.2;
+          }
+
+          .problem-kn {
+            font-size: 9px;
+            line-height: 1.2;
+          }
+
+          .chip {
+            background: #eee;
+            border: 1px solid #999;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            padding: 2px 8px;
+            font-size: 10px;
+          }
+
+          .multi-select-container {
+            border: 1px solid #ddd;
+            background: none;
+            padding: 4px;
+            min-height: auto;
+          }
+
+          .file-attachment-view,
+          .uploaded-file {
+            border: 1px solid #ddd;
+            padding: 8px;
+            background: none;
+          }
+
+          .selected-count,
+          .help-text {
+            font-size: 9px;
+            color: #666;
+            margin: 2px 0 0 0;
+          }
+
+          /* Ensure proper spacing for print */
+          body {
+            margin: 0;
+            padding: 0;
+          }
+
+          /* Force all sections to flow naturally */
+          * {
+            box-sizing: border-box;
+          }
+
+          .form-group input[type="datetime-local"],
+          .form-group input[type="date"] {
+            padding: 0 !important;
+            height: auto !important;
+            line-height: 1.2 !important;
+          }
+
+          /* Hide dropdown arrows that take space */
+          select::-ms-expand {
+            display: none;
           }
         }
       `}</style>
