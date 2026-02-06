@@ -9,8 +9,12 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { Quotation, Lead, FieldVisit } from '../types';
+import type { Quotation, Lead, FieldVisit, Product, LineItemRow } from '../types';
+import { CROP_PROBLEMS } from '../types';
 import { uploadFile, getDownloadLink } from '../services/driveService';
+import { fetchProducts } from '../services/supabase/products';
+import { fetchLineItemsByQuotationId, saveLineItemsForQuotation } from '../services/supabase/lineItems';
+import { numberToWords } from '../utils/numberToWords';
 
 interface QuotationModalProps {
   isOpen: boolean;
@@ -25,7 +29,7 @@ interface QuotationModalProps {
     deliveryStatuses: string[];
   };
   onClose: () => void;
-  onSave: (quotationData: Partial<Quotation>) => Promise<void>;
+  onSave: (quotationData: Partial<Quotation>) => Promise<string | void>;
 }
 
 const initialFormData = {
@@ -37,6 +41,7 @@ const initialFormData = {
   validUntil: '',
   status: 'Draft',
   notes: '',
+  usageInstructions: '',
   attachmentFileId: '',
   deliveryStatus: '',
   deliveryDate: '',
@@ -57,6 +62,7 @@ export function QuotationModal({
   const [formData, setFormData] = useState(initialFormData);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [generatingPDF, setGeneratingPDF] = useState(false);
 
   // Searchable lead dropdown state
   const [leadSearchTerm, setLeadSearchTerm] = useState('');
@@ -74,6 +80,12 @@ export function QuotationModal({
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Line items state
+  const [lineItems, setLineItems] = useState<LineItemRow[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [loadingLineItems, setLoadingLineItems] = useState(false);
 
   // Get selected lead info from leadMap or leadOptions
   const selectedLead = leadMap.get(formData.leadId) || leadOptions.find((l: Lead) => l.id === formData.leadId);
@@ -115,9 +127,9 @@ export function QuotationModal({
     }
   }, [onSearchLeads]);
 
-  // Populate form when editing or reset when adding
+  // Populate form when editing/viewing or reset when adding
   useEffect(() => {
-    if (mode === 'edit' && quotation) {
+    if ((mode === 'edit' || mode === 'view') && quotation) {
       setFormData({
         leadId: quotation.leadId || '',
         visitId: quotation.visitId || '',
@@ -127,12 +139,13 @@ export function QuotationModal({
         validUntil: quotation.validUntil ? quotation.validUntil.split('T')[0] : '',
         status: quotation.status || 'Draft',
         notes: quotation.notes || '',
+        usageInstructions: quotation.usageInstructions || '',
         attachmentFileId: quotation.attachmentFileId || '',
         deliveryStatus: quotation.deliveryStatus || '',
         deliveryDate: quotation.deliveryDate ? quotation.deliveryDate.split('T')[0] : '',
       });
       setUploadedFileName(quotation.attachmentFileId ? 'Existing file' : null);
-      // Load visits for this lead
+      // Load visits for this lead (needed for selectedVisit in PDF)
       if (quotation.leadId) {
         loadVisitsForLead(quotation.leadId);
       }
@@ -152,6 +165,84 @@ export function QuotationModal({
       loadInitialLeads();
     }
   }, [mode, quotation, loadVisitsForLead, loadInitialLeads]);
+
+  // Load products and line items when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Load products for dropdown (add/edit) and for print view (view mode needs categories)
+    setLoadingProducts(true);
+    fetchProducts(mode === 'view' ? false : true)
+      .then((prods) => setProducts(prods))
+      .catch((err) => console.error('Failed to load products:', err))
+      .finally(() => setLoadingProducts(false));
+
+    // Load existing line items (edit/view mode)
+    if ((mode === 'edit' || mode === 'view') && quotation) {
+      setLoadingLineItems(true);
+      fetchLineItemsByQuotationId(quotation.id)
+        .then((items) =>
+          setLineItems(
+            items.map((item) => ({
+              id: item.id,
+              productId: item.productId,
+              productName: item.productName,
+              unitPrice: item.unitPrice,
+              quantity: item.quantity,
+              notes: item.notes || '',
+              displayOrder: item.displayOrder,
+            }))
+          )
+        )
+        .catch((err) => console.error('Failed to load line items:', err))
+        .finally(() => setLoadingLineItems(false));
+    } else {
+      setLineItems([]);
+    }
+  }, [isOpen, mode, quotation]);
+
+  // Line item handlers
+  const handleAddLineItem = () => {
+    setLineItems((prev) => [
+      ...prev,
+      {
+        productId: '',
+        productName: '',
+        unitPrice: 0,
+        quantity: 1,
+        notes: '',
+        displayOrder: prev.length,
+      },
+    ]);
+  };
+
+  const handleRemoveLineItem = (index: number) => {
+    setLineItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleLineItemChange = (index: number, field: string, value: any) => {
+    setLineItems((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+
+      // When product changes, auto-fill name and price
+      if (field === 'productId') {
+        const product = products.find((p) => p.id === value);
+        if (product) {
+          updated[index].productName = product.name;
+          updated[index].unitPrice = product.unitPrice;
+        }
+      }
+
+      return updated;
+    });
+  };
+
+  // Computed total from line items
+  const lineItemsTotal = lineItems.reduce(
+    (sum, item) => sum + item.unitPrice * item.quantity,
+    0
+  );
 
   // Search leads with debounce
   const handleLeadSearch = useCallback((term: string) => {
@@ -249,10 +340,25 @@ export function QuotationModal({
       setError('Quote date is required');
       return;
     }
-    if (!formData.quoteAmount || formData.quoteAmount <= 0) {
-      setError('Quote amount must be greater than 0');
+
+    // Amount validation: either line items or manual amount
+    const hasLineItems = lineItems.length > 0;
+    if (!hasLineItems && (!formData.quoteAmount || formData.quoteAmount <= 0)) {
+      setError('Quote amount must be greater than 0 (or add line items)');
       return;
     }
+
+    // Validate line items if any exist
+    if (hasLineItems) {
+      const invalidItems = lineItems.filter(
+        (item) => !item.productId || item.quantity <= 0 || item.unitPrice <= 0
+      );
+      if (invalidItems.length > 0) {
+        setError('All line items must have a product selected with valid quantity and price');
+        return;
+      }
+    }
+
     if (!formData.status) {
       setError('Status is required');
       return;
@@ -260,7 +366,33 @@ export function QuotationModal({
 
     setSaving(true);
     try {
-      await onSave(formData);
+      // If line items exist, override quoteAmount with computed total
+      const saveData = { ...formData };
+      if (hasLineItems) {
+        saveData.quoteAmount = lineItemsTotal;
+      }
+
+      const quotationId = await onSave(saveData);
+
+      // Save line items if we have a quotation ID
+      const resolvedId = quotationId || quotation?.id;
+      if (resolvedId && hasLineItems) {
+        await saveLineItemsForQuotation(
+          resolvedId,
+          lineItems.map((item, idx) => ({
+            productId: item.productId,
+            productName: item.productName,
+            unitPrice: item.unitPrice,
+            quantity: item.quantity,
+            notes: item.notes || undefined,
+            displayOrder: idx,
+          }))
+        );
+      } else if (resolvedId && !hasLineItems && mode === 'edit') {
+        // If editing and all line items were removed, clear them in DB
+        await saveLineItemsForQuotation(resolvedId, []);
+      }
+
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save quotation');
@@ -301,6 +433,33 @@ export function QuotationModal({
     }
   };
 
+  const handleGeneratePDF = async () => {
+    if (!quotation) return;
+    setGeneratingPDF(true);
+    try {
+      const { pdf } = await import('@react-pdf/renderer');
+      const { QuotationPDF } = await import('./QuotationPDF');
+
+      const blob = await pdf(
+        QuotationPDF({
+          quotation,
+          lead: viewLead || null,
+          visit: selectedVisit || null,
+          lineItems,
+          products,
+        })
+      ).toBlob();
+
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (err) {
+      console.error('PDF generation failed, falling back to browser print:', err);
+      window.print();
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -309,7 +468,18 @@ export function QuotationModal({
           {quotation && mode !== 'add' && (
             <span className="quotation-display-id">{quotation.displayId}</span>
           )}
-          <button className="modal-close" onClick={onClose}>
+          {isReadOnly && (
+            <button
+              type="button"
+              className="btn-print no-print"
+              onClick={handleGeneratePDF}
+              disabled={generatingPDF}
+              title="Generate PDF"
+            >
+              {generatingPDF ? 'Generating...' : 'Print'}
+            </button>
+          )}
+          <button className="modal-close no-print" onClick={onClose}>
             &times;
           </button>
         </div>
@@ -458,6 +628,116 @@ export function QuotationModal({
             )}
           </div>
 
+          {/* Line Items Section */}
+          <div className="form-section">
+            <h3>Line Items {lineItems.length > 0 && `(${lineItems.length})`}</h3>
+            {loadingLineItems ? (
+              <div style={{ padding: '12px', color: '#888' }}>Loading line items...</div>
+            ) : isReadOnly ? (
+              // View mode: read-only table
+              lineItems.length > 0 ? (
+                <div className="line-items-table-wrapper">
+                  <table className="line-items-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Product</th>
+                        <th className="num-col">Qty</th>
+                        <th className="num-col">Unit Price</th>
+                        <th className="num-col">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lineItems.map((item, idx) => (
+                        <tr key={idx}>
+                          <td>{idx + 1}</td>
+                          <td>{item.productName}</td>
+                          <td className="num-col">{item.quantity}</td>
+                          <td className="num-col">{formatCurrency(item.unitPrice)}</td>
+                          <td className="num-col">{formatCurrency(item.unitPrice * item.quantity)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={4} className="total-label">Total</td>
+                        <td className="num-col total-value">{formatCurrency(lineItemsTotal)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ padding: '8px 0', color: '#888', fontSize: '14px' }}>No line items — manual amount</div>
+              )
+            ) : (
+              // Add/Edit mode: editable rows
+              <div className="line-items-editor">
+                {loadingProducts && <div style={{ padding: '8px 0', color: '#888', fontSize: '13px' }}>Loading products...</div>}
+                {lineItems.map((item, idx) => (
+                  <div key={idx} className="line-item-row">
+                    <div className="line-item-fields">
+                      <div className="li-field li-product">
+                        <label>Product</label>
+                        <select
+                          value={item.productId}
+                          onChange={(e) => handleLineItemChange(idx, 'productId', e.target.value)}
+                        >
+                          <option value="">-- Select Product --</option>
+                          {products.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({p.unit})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="li-field li-qty">
+                        <label>Qty</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.quantity || ''}
+                          onChange={(e) => handleLineItemChange(idx, 'quantity', parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="li-field li-price">
+                        <label>Unit Price</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={item.unitPrice || ''}
+                          onChange={(e) => handleLineItemChange(idx, 'unitPrice', parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="li-field li-subtotal">
+                        <label>Subtotal</label>
+                        <div className="li-subtotal-value">{formatCurrency(item.unitPrice * item.quantity)}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-remove-line-item"
+                        onClick={() => handleRemoveLineItem(idx)}
+                        title="Remove"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <button type="button" className="btn-add-line-item" onClick={handleAddLineItem}>
+                  + Add Product
+                </button>
+                {lineItems.length > 0 && (
+                  <div className="line-items-total">
+                    <span>Total:</span>
+                    <span className="total-value">{formatCurrency(lineItemsTotal)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Quotation Details Section */}
           <div className="form-section">
             <h3>Quotation Details</h3>
@@ -480,6 +760,11 @@ export function QuotationModal({
                 <label htmlFor="quoteAmount">Amount (INR) *</label>
                 {isReadOnly && quotation ? (
                   <div className="amount-display">{formatCurrency(quotation.quoteAmount)}</div>
+                ) : lineItems.length > 0 ? (
+                  <div className="amount-display computed">
+                    {formatCurrency(lineItemsTotal)}
+                    <span className="computed-hint">Auto-calculated from line items</span>
+                  </div>
                 ) : (
                   <input
                     type="number"
@@ -588,6 +873,19 @@ export function QuotationModal({
                 />
               </div>
 
+              <div className="form-group full-width">
+                <label htmlFor="usageInstructions">How to Use / Usage Instructions</label>
+                <textarea
+                  id="usageInstructions"
+                  name="usageInstructions"
+                  value={isReadOnly && quotation ? (quotation.usageInstructions || '') : formData.usageInstructions}
+                  onChange={handleChange}
+                  disabled={isReadOnly}
+                  rows={5}
+                  placeholder="Enter day-by-day product application schedule..."
+                />
+              </div>
+
               {/* File Attachment */}
               <div className="form-group full-width">
                 <label>Quotation Document</label>
@@ -680,6 +978,189 @@ export function QuotationModal({
             )}
           </div>
         </form>
+
+        {/* Print-only quotation document */}
+        {isReadOnly && quotation && (
+          <div className="print-only quotation-print">
+            <img src="/quotation-header.jpg" alt="Company Header" className="print-header-img" />
+
+            <div className="print-doc-info">
+              <div className="print-doc-row">
+                <span>Q Number: <strong>{quotation.displayId}</strong></span>
+                <span>Date: <strong>{formatDate(quotation.quoteDate)}</strong></span>
+              </div>
+              <div className="print-doc-row">
+                <span>&nbsp;</span>
+                <span>Evaluation</span>
+              </div>
+            </div>
+
+            {viewLead && (
+              <div className="print-customer-info">
+                <p>By the name of: <strong>{viewLead.farmerName}</strong></p>
+                <p>Location: <strong>
+                  {[viewLead.village, viewLead.taluk, viewLead.district].filter(Boolean).join(', ')}
+                </strong></p>
+                <p>Contact: <strong>{viewLead.phone}</strong></p>
+                <p>Subject: Comprehensive crop care; Solutions for identified diseases and deficiencies.</p>
+              </div>
+            )}
+
+            {/* Identified Problems from linked visit */}
+            {selectedVisit && selectedVisit.identifiedProblems && selectedVisit.identifiedProblems.length > 0 && (
+              <div className="print-problems-section">
+                <p>Dear Sir,</p>
+                <p>
+                  Upon our visit to your arecanut plantation, we have identified the following issues:{' '}
+                  {selectedVisit.identifiedProblems.map((key, idx) => {
+                    const prob = CROP_PROBLEMS.find((p) => p.en === key);
+                    const label = prob ? `${prob.en} (${prob.kn})` : key;
+                    return (
+                      <span key={key}>
+                        {label}
+                        {idx < selectedVisit.identifiedProblems!.length - 1 ? ', ' : '.'}
+                      </span>
+                    );
+                  })}
+                </p>
+                <p>We recommend the following treatment plan for your crops.</p>
+              </div>
+            )}
+
+            {/* Crop info */}
+            {viewLead && (
+              <div className="print-crop-info">
+                <p>
+                  <strong>Quotation details:</strong> As follows
+                </p>
+                <p>
+                  {viewLead.cropType}
+                  {viewLead.numPlants ? ` \u2013 ${viewLead.numPlants} Plants` : ''}
+                  {viewLead.cropAge ? `, ${viewLead.cropAge}` : ''}
+                  {viewLead.farmSizeAcres ? ` (${viewLead.farmSizeAcres} acres)` : ''}
+                </p>
+              </div>
+            )}
+
+            {/* Materials required - descriptive list */}
+            {lineItems.length > 0 && (() => {
+              const grouped = new Map<string, LineItemRow[]>();
+              lineItems.forEach((item) => {
+                const product = products.find((p) => p.id === item.productId);
+                const category = product?.category || 'General';
+                if (!grouped.has(category)) grouped.set(category, []);
+                grouped.get(category)!.push(item);
+              });
+
+              return (
+                <div className="print-materials-section">
+                  <p><strong>Materials required;</strong></p>
+                  {Array.from(grouped.entries()).map(([category, items]) => (
+                    <div key={category}>
+                      <p><strong>{category} Materials;</strong></p>
+                      <ul className="print-materials-list">
+                        {items.map((item, idx) => {
+                          const product = products.find((p) => p.id === item.productId);
+                          return (
+                            <li key={idx}>
+                              {item.productName}
+                              {product?.dosage ? ` - ${product.dosage}` : ''}
+                              {` = ${item.quantity}`}
+                              {product?.description ? ` (${product.description})` : ''}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Line items grouped by category - pricing table */}
+            {lineItems.length > 0 && (() => {
+              const grouped = new Map<string, LineItemRow[]>();
+              lineItems.forEach((item) => {
+                const product = products.find((p) => p.id === item.productId);
+                const category = product?.category || 'General';
+                if (!grouped.has(category)) grouped.set(category, []);
+                grouped.get(category)!.push(item);
+              });
+
+              let slNo = 1;
+              return Array.from(grouped.entries()).map(([category, items]) => {
+                const categoryTotal = items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+                return (
+                  <div key={category} className="print-category-section">
+                    <h4 className="print-category-title">{category}</h4>
+                    <table className="print-items-table">
+                      <thead>
+                        <tr>
+                          <th>Sl</th>
+                          <th>Particular</th>
+                          <th>Packing</th>
+                          <th className="num-col">Qty</th>
+                          <th className="num-col">Rate</th>
+                          <th className="num-col">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map((item) => {
+                          const product = products.find((p) => p.id === item.productId);
+                          return (
+                            <tr key={slNo}>
+                              <td>{slNo++}</td>
+                              <td>{item.productName}</td>
+                              <td>{product?.unit || ''}</td>
+                              <td className="num-col">{item.quantity}</td>
+                              <td className="num-col">{formatCurrency(item.unitPrice)}</td>
+                              <td className="num-col">{formatCurrency(item.unitPrice * item.quantity)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <td colSpan={5} style={{ textAlign: 'right', fontWeight: 600 }}>Total</td>
+                          <td className="num-col" style={{ fontWeight: 600 }}>{formatCurrency(categoryTotal)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                );
+              });
+            })()}
+
+            {/* Grand total */}
+            <div className="print-grand-total">
+              <p><strong>Total Amount: {formatCurrency(quotation.quoteAmount)}/-</strong></p>
+              <p className="amount-words">{numberToWords(quotation.quoteAmount)}</p>
+              {viewLead?.numPlants && viewLead.numPlants > 0 && (
+                <p className="cost-per-plant">
+                  Cost per plant: {formatCurrency(Math.round(quotation.quoteAmount / viewLead.numPlants))}
+                </p>
+              )}
+            </div>
+
+            {/* Notes */}
+            {quotation.notes && (
+              <div className="print-notes-section">
+                <p><strong>Note:</strong></p>
+                <p style={{ whiteSpace: 'pre-wrap' }}>{quotation.notes}</p>
+              </div>
+            )}
+
+            {/* Usage Instructions */}
+            {quotation.usageInstructions && (
+              <div className="print-usage-section">
+                <p><strong>How to Use;</strong></p>
+                <p style={{ whiteSpace: 'pre-wrap' }}>{quotation.usageInstructions}</p>
+              </div>
+            )}
+
+            <img src="/quotation-footer.jpg" alt="Company Footer" className="print-footer-img" />
+          </div>
+        )}
       </div>
 
       <style>{`
@@ -1128,6 +1609,205 @@ export function QuotationModal({
           cursor: not-allowed;
         }
 
+        /* Line Items Styles */
+        .line-items-table-wrapper {
+          overflow-x: auto;
+        }
+
+        .line-items-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 14px;
+        }
+
+        .line-items-table th {
+          background: #f8f9fa;
+          padding: 8px 12px;
+          text-align: left;
+          font-size: 12px;
+          font-weight: 600;
+          color: #666;
+          text-transform: uppercase;
+          border-bottom: 2px solid #e9ecef;
+        }
+
+        .line-items-table td {
+          padding: 8px 12px;
+          border-bottom: 1px solid #f0f0f0;
+        }
+
+        .line-items-table .num-col {
+          text-align: right;
+        }
+
+        .line-items-table th.num-col {
+          text-align: right;
+        }
+
+        .line-items-table tfoot td {
+          border-top: 2px solid #e9ecef;
+          border-bottom: none;
+          font-weight: 600;
+        }
+
+        .total-label {
+          text-align: right;
+          color: #666;
+        }
+
+        .total-value {
+          color: #2e7d32;
+          font-weight: 600;
+        }
+
+        .line-items-editor {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .line-item-row {
+          background: #f8f9fa;
+          border: 1px solid #e9ecef;
+          border-radius: 8px;
+          padding: 12px;
+        }
+
+        .line-item-fields {
+          display: flex;
+          gap: 10px;
+          align-items: flex-end;
+        }
+
+        .li-field {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .li-field label {
+          font-size: 11px;
+          color: #888;
+          font-weight: 500;
+        }
+
+        .li-field select,
+        .li-field input {
+          padding: 8px 10px;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          font-size: 13px;
+        }
+
+        .li-field select:focus,
+        .li-field input:focus {
+          outline: none;
+          border-color: #667eea;
+        }
+
+        .li-product {
+          flex: 2;
+          min-width: 0;
+        }
+
+        .li-product select {
+          width: 100%;
+        }
+
+        .li-qty {
+          width: 70px;
+          flex-shrink: 0;
+        }
+
+        .li-qty input {
+          width: 100%;
+        }
+
+        .li-price {
+          width: 100px;
+          flex-shrink: 0;
+        }
+
+        .li-price input {
+          width: 100%;
+        }
+
+        .li-subtotal {
+          width: 100px;
+          flex-shrink: 0;
+        }
+
+        .li-subtotal-value {
+          padding: 8px 10px;
+          background: #e8f5e9;
+          border-radius: 4px;
+          font-size: 13px;
+          font-weight: 600;
+          color: #2e7d32;
+          white-space: nowrap;
+        }
+
+        .btn-remove-line-item {
+          background: none;
+          border: none;
+          color: #f44336;
+          font-size: 22px;
+          cursor: pointer;
+          padding: 0 4px;
+          line-height: 1;
+          flex-shrink: 0;
+          align-self: flex-end;
+          margin-bottom: 4px;
+        }
+
+        .btn-remove-line-item:hover {
+          color: #d32f2f;
+        }
+
+        .btn-add-line-item {
+          background: white;
+          border: 1px dashed #667eea;
+          color: #667eea;
+          padding: 10px;
+          border-radius: 6px;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          width: 100%;
+        }
+
+        .btn-add-line-item:hover {
+          background: #f0f4ff;
+        }
+
+        .line-items-total {
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 0;
+          font-size: 16px;
+          font-weight: 600;
+          border-top: 2px solid #e9ecef;
+        }
+
+        .line-items-total .total-value {
+          font-size: 18px;
+          color: #2e7d32;
+        }
+
+        .amount-display.computed {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .computed-hint {
+          font-size: 11px;
+          color: #888;
+          font-weight: 400;
+        }
+
         @media (max-width: 600px) {
           .modal-overlay {
             padding: 0;
@@ -1154,6 +1834,256 @@ export function QuotationModal({
           .btn-cancel,
           .btn-save {
             width: 100%;
+          }
+
+          .line-item-fields {
+            flex-wrap: wrap;
+          }
+
+          .li-product {
+            flex: 1 1 100%;
+          }
+
+          .li-qty,
+          .li-price,
+          .li-subtotal {
+            flex: 1;
+            width: auto;
+          }
+        }
+
+        /* Print button */
+        .btn-print {
+          background: #ff9800;
+          color: white;
+          border: none;
+          padding: 6px 16px;
+          border-radius: 6px;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+        }
+
+        .btn-print:hover {
+          background: #f57c00;
+        }
+
+        /* Print-only document — hidden on screen */
+        .print-only {
+          display: none;
+        }
+
+        /* Print styles */
+        @media print {
+          @page {
+            margin: 5mm;
+            size: A4;
+          }
+
+          /* Hide everything except the print document */
+          body * {
+            visibility: hidden;
+          }
+
+          .modal-overlay,
+          .modal-overlay * {
+            visibility: visible;
+          }
+
+          .modal-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: auto;
+            background: none;
+            padding: 0;
+            display: block;
+          }
+
+          .modal-content {
+            position: relative;
+            max-width: 100%;
+            max-height: none;
+            border-radius: 0;
+            box-shadow: none;
+            overflow: visible;
+          }
+
+          /* Hide the form (screen UI) and show print document */
+          .modal-form,
+          .modal-header,
+          .modal-error,
+          .modal-footer,
+          .no-print {
+            display: none !important;
+          }
+
+          .print-only {
+            display: block !important;
+          }
+
+          .quotation-print {
+            padding: 0;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            color: #000;
+            font-size: 13px;
+            line-height: 1.5;
+          }
+
+          .print-header-img,
+          .print-footer-img {
+            width: 100%;
+            max-width: 100%;
+            height: auto;
+          }
+
+          .print-header-img {
+            margin-bottom: 8px;
+          }
+
+          .print-footer-img {
+            margin-top: 16px;
+          }
+
+          .print-doc-info {
+            border: 1px solid #000;
+            padding: 8px 12px;
+            margin-bottom: 12px;
+          }
+
+          .print-doc-row {
+            display: flex;
+            justify-content: space-between;
+          }
+
+          .print-customer-info {
+            margin-bottom: 12px;
+            padding: 8px 0;
+            border-bottom: 1px solid #ccc;
+          }
+
+          .print-customer-info p {
+            margin: 3px 0;
+          }
+
+          .print-problems-section {
+            margin-bottom: 12px;
+          }
+
+          .print-problems-section p {
+            margin: 6px 0;
+          }
+
+          .print-crop-info {
+            margin-bottom: 12px;
+            padding: 6px 0;
+          }
+
+          .print-crop-info p {
+            margin: 3px 0;
+          }
+
+          .print-materials-section {
+            margin-bottom: 16px;
+          }
+
+          .print-materials-section p {
+            margin: 6px 0;
+          }
+
+          .print-materials-list {
+            margin: 4px 0 12px 0;
+            padding-left: 20px;
+            list-style-type: disc;
+          }
+
+          .print-materials-list li {
+            margin: 4px 0;
+            font-size: 12px;
+            line-height: 1.4;
+          }
+
+          .print-category-section {
+            margin-bottom: 16px;
+            page-break-inside: avoid;
+          }
+
+          .print-category-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin: 8px 0;
+            padding: 4px 8px;
+            background: #f0f0f0;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          .print-items-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-bottom: 4px;
+          }
+
+          .print-items-table th {
+            background: #e8e8e8;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            border: 1px solid #000;
+            padding: 6px 8px;
+            text-align: left;
+            font-weight: 600;
+          }
+
+          .print-items-table td {
+            border: 1px solid #000;
+            padding: 5px 8px;
+          }
+
+          .print-items-table .num-col {
+            text-align: right;
+          }
+
+          .print-items-table th.num-col {
+            text-align: right;
+          }
+
+          .print-items-table tfoot td {
+            font-weight: 600;
+          }
+
+          .print-grand-total {
+            margin: 12px 0;
+            padding: 10px;
+            border: 2px solid #000;
+            text-align: center;
+          }
+
+          .print-grand-total p {
+            margin: 4px 0;
+          }
+
+          .amount-words {
+            font-style: italic;
+            font-size: 12px;
+          }
+
+          .cost-per-plant {
+            font-size: 12px;
+            color: #444;
+          }
+
+          .print-notes-section,
+          .print-usage-section {
+            margin: 12px 0;
+            padding: 8px 0;
+            border-top: 1px solid #ccc;
+          }
+
+          .print-notes-section p,
+          .print-usage-section p {
+            margin: 4px 0;
           }
         }
       `}</style>

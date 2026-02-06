@@ -10,7 +10,8 @@ export type PageRoute =
   | '/leads'
   | '/visits'
   | '/quotations'
-  | '/payments';
+  | '/payments'
+  | '/products';
 
 /**
  * Role permissions for each page
@@ -22,6 +23,7 @@ export const ROLE_PERMISSIONS: Record<PageRoute, UserRole[]> = {
   '/visits': ['Field Agronomist', 'Sales Executive', 'Manager'],
   '/quotations': ['Sales Executive', 'Manager'],
   '/payments': ['Sales Executive', 'Manager'],
+  '/products': ['Manager'],
 };
 
 /**
@@ -74,6 +76,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/visits', label: 'Field Visits' },
   { path: '/quotations', label: 'Quotations' },
   { path: '/payments', label: 'Payments' },
+  { path: '/products', label: 'Products' },
 ];
 
 /**

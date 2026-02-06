@@ -18,6 +18,7 @@ function mapQuotationFromDB(row: any): Quotation {
     validUntil: row.valid_until || '',
     status: row.status,
     notes: row.notes || '',
+    usageInstructions: row.usage_instructions || '',
     attachmentFileId: row.attachment_file_id || '',
     deliveryStatus: row.delivery_status || '',
     deliveryDate: row.delivery_date || '',
@@ -44,11 +45,32 @@ function mapQuotationToDB(quote: Partial<Quotation>): any {
   if (quote.validUntil !== undefined) mapped.valid_until = quote.validUntil || null;
   if (quote.status) mapped.status = quote.status;
   if (quote.notes !== undefined) mapped.notes = quote.notes || null;
+  if (quote.usageInstructions !== undefined) mapped.usage_instructions = quote.usageInstructions || null;
   if (quote.attachmentFileId !== undefined) mapped.attachment_file_id = quote.attachmentFileId || null;
   if (quote.deliveryStatus !== undefined) mapped.delivery_status = quote.deliveryStatus || null;
   if (quote.deliveryDate !== undefined) mapped.delivery_date = quote.deliveryDate || null;
 
   return mapped;
+}
+
+/**
+ * Count quotations (server-side, no row data transferred)
+ */
+export async function countQuotations(preparedBy?: string): Promise<number> {
+  let query = supabase
+    .from('quotations')
+    .select('*', { count: 'exact', head: true })
+    .eq('is_deleted', false);
+
+  if (preparedBy) {
+    query = query.eq('prepared_by', preparedBy);
+  }
+
+  const { count, error } = await query;
+
+  if (error) throw new SupabaseError(error.message, error.code);
+
+  return count || 0;
 }
 
 /**
@@ -74,7 +96,11 @@ export async function fetchQuotations(
     query = query.eq('prepared_by', preparedBy);
   }
 
-  const { data, error } = await query.range(offset, offset + limit - 1);
+  if (limit > 0) {
+    query = query.range(offset, offset + limit - 1);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw new SupabaseError(error.message, error.code);
 

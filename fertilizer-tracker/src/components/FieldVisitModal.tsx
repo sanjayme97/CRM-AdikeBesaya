@@ -57,6 +57,7 @@ export function FieldVisitModal({
   const [formData, setFormData] = useState(initialFormData);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [generatingPDF, setGeneratingPDF] = useState(false);
 
   // Track if quotation was already requested when modal opened (for field locking)
   const [wasQuotationRequested, setWasQuotationRequested] = useState(false);
@@ -230,9 +231,29 @@ export function FieldVisitModal({
     }
   };
 
-  // Handle print
-  const handlePrint = () => {
-    window.print();
+  // Handle PDF generation
+  const handleGeneratePDF = async () => {
+    if (!visit) return;
+    setGeneratingPDF(true);
+    try {
+      const { pdf } = await import('@react-pdf/renderer');
+      const { FieldVisitPDF } = await import('./FieldVisitPDF');
+
+      const blob = await pdf(
+        FieldVisitPDF({
+          visit,
+          lead: viewLead || null,
+        })
+      ).toBlob();
+
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (err) {
+      console.error('PDF generation failed, falling back to browser print:', err);
+      window.print();
+    } finally {
+      setGeneratingPDF(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -317,8 +338,8 @@ export function FieldVisitModal({
             <span className="visit-display-id">{visit.displayId}</span>
           )}
           {isReadOnly && (
-            <button className="btn-print no-print" onClick={handlePrint} title="Print Visit Details">
-              🖨️ Print
+            <button className="btn-print no-print" onClick={handleGeneratePDF} disabled={generatingPDF} title="Print Visit Details">
+              {generatingPDF ? 'Generating...' : '🖨️ Print'}
             </button>
           )}
           <button className="modal-close no-print" onClick={onClose}>

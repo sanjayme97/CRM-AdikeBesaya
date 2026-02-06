@@ -86,6 +86,7 @@ export interface Quotation {
   validUntil: string;
   status: string; // From Lookups sheet (Category='QuotationStatus')
   notes?: string;
+  usageInstructions?: string; // Day-by-day product application schedule (How to Use section for print)
   attachmentFileId?: string; // Google Drive file ID for quotation document
   deliveryStatus?: string; // From Lookups sheet (Category='DeliveryStatus'): Pending, Scheduled, Delivered, Partial
   deliveryDate?: string; // When material was/will be delivered
@@ -116,6 +117,58 @@ export interface Payment {
   deletedBy?: string;
   deletedDate?: string;
   deleteReason?: string;
+}
+
+// ============================================
+// PRODUCT TYPE
+// ============================================
+
+export interface Product {
+  id: string; // UUID - PRIMARY KEY
+  sku: string; // Unique product SKU
+  name: string; // Product name in English
+  nameKannada?: string; // Product name in Kannada
+  description?: string; // Product description / benefits
+  dosage?: string; // Application rate, e.g. "50ml/200 Liters"
+  unitPrice: number; // Price per unit
+  unit: string; // Unit of measurement: kg, litre, unit, bag, bottle, pack, etc.
+  category?: string; // For grouping: e.g., 'Drenching', 'Spraying'
+  isActive: boolean; // Whether product is available for selection
+  displayOrder: number; // For sorting in dropdowns
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================
+// QUOTATION LINE ITEM TYPE
+// ============================================
+
+export interface QuotationLineItem {
+  id: string; // UUID - PRIMARY KEY
+  quotationId: string; // FK to Quotation.id
+  productId: string; // FK to Product.id
+  productName: string; // Snapshot of product name at quote time
+  unitPrice: number; // Snapshot of unit price at quote time
+  quantity: number;
+  subtotal: number; // GENERATED: unitPrice * quantity (read-only)
+  notes?: string;
+  displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Lightweight line item row used in QuotationModal and QuotationPDF.
+ * Subset of QuotationLineItem without DB-only fields.
+ */
+export interface LineItemRow {
+  id?: string;
+  productId: string;
+  productName: string;
+  unitPrice: number;
+  quantity: number;
+  notes: string;
+  displayOrder: number;
 }
 
 // ============================================
@@ -201,6 +254,10 @@ export type PaymentFormInput = Omit<
   Payment,
   'id' | 'rowNumber' | 'displayId' | 'isDeleted' | 'deletedBy' | 'deletedDate' | 'deleteReason'
 >;
+
+export type ProductFormInput = Omit<Product, 'id' | 'createdAt' | 'updatedAt'>;
+
+export type LineItemFormInput = Omit<QuotationLineItem, 'id' | 'subtotal' | 'createdAt' | 'updatedAt'>;
 
 // ============================================
 // API RESPONSE TYPES

@@ -12,3 +12,5 @@ export * from './fieldVisits';
 export * from './quotations';
 export * from './payments';
 export * from './lookups';
+export * from './products';
+export * from './lineItems';

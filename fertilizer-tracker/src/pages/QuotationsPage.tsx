@@ -32,6 +32,7 @@ import {
   fetchDeliveredQuotations,
   getPaymentTotalsByQuoteIds,
 } from '../services/backend';
+import { countQuotations } from '../services/supabase/quotations';
 import type { Quotation, Lead, TalukWithDistrict } from '../types';
 
 const PAGE_SIZE = 50;
@@ -214,14 +215,14 @@ export function QuotationsPage() {
 
   const updateTabCounts = async () => {
     try {
-      // Get counts for each tab
-      const [allQuotes, myQuotes, deliveredQuotes] = await Promise.all([
-        fetchQuotations(0), // All quotes (no limit)
-        user?.email ? fetchQuotations(0, 0, undefined, user.email) : Promise.resolve([]),
+      // Count-only queries for "All" and "My Work" (no row data transferred)
+      const [allCount, myCount, deliveredQuotes] = await Promise.all([
+        countQuotations(),
+        user?.email ? countQuotations(user.email) : Promise.resolve(0),
         fetchDeliveredQuotations(),
       ]);
 
-      // For pending payment, we need to calculate which have balance
+      // For pending payment, we still need row data to calculate balances
       let pendingPaymentCount = 0;
       if (deliveredQuotes.length > 0) {
         const quoteIds = deliveredQuotes.map(q => q.id);
@@ -233,8 +234,8 @@ export function QuotationsPage() {
       }
 
       setTabCounts({
-        all: allQuotes.length,
-        myWork: myQuotes.length,
+        all: allCount,
+        myWork: myCount,
         pendingPayment: pendingPaymentCount,
       });
     } catch (err) {
@@ -290,16 +291,20 @@ export function QuotationsPage() {
     closeWithHistory();
   };
 
-  const handleSave = async (quotationData: Partial<Quotation>) => {
+  const handleSave = async (quotationData: Partial<Quotation>): Promise<string | void> => {
     if (!user?.email) throw new Error('Not authenticated');
 
     if (modalMode === 'add') {
-      await createQuotation({
+      const created = await createQuotation({
         ...quotationData,
         preparedBy: quotationData.preparedBy || user.email,
       } as Omit<Quotation, 'id' | 'rowNumber' | 'displayId' | 'lastUpdated' | 'isDeleted' | 'deletedBy' | 'deletedDate' | 'deleteReason'>);
+      await loadDataForTab();
+      return created.id;
     } else if (modalMode === 'edit' && selectedQuotation) {
       await updateQuotation(selectedQuotation.id, quotationData);
+      await loadDataForTab();
+      return selectedQuotation.id;
     }
 
     await loadDataForTab();
