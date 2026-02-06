@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import { useAuthStore } from '../store/authStore';
+import './SessionExpiryWarning.css';
 
 // Show warning 5 minutes before expiration
 const WARNING_THRESHOLD_MS = 5 * 60 * 1000;
@@ -112,88 +113,6 @@ export function SessionExpiryWarning() {
         </button>
       </div>
 
-      <style>{`
-        .session-expiry-warning {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-          color: white;
-          padding: 12px 20px;
-          z-index: 9999;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-        }
-
-        .warning-content {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 15px;
-          max-width: 800px;
-          margin: 0 auto;
-        }
-
-        .warning-icon {
-          font-size: 20px;
-        }
-
-        .warning-text {
-          font-size: 14px;
-        }
-
-        .warning-text strong {
-          font-weight: 600;
-        }
-
-        .extend-btn {
-          background: white;
-          color: #d97706;
-          border: none;
-          padding: 8px 16px;
-          border-radius: 6px;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .extend-btn:hover:not(:disabled) {
-          background: #fef3c7;
-        }
-
-        .extend-btn:disabled {
-          opacity: 0.7;
-          cursor: not-allowed;
-        }
-
-        .dismiss-btn {
-          background: transparent;
-          color: white;
-          border: none;
-          padding: 4px 8px;
-          font-size: 18px;
-          cursor: pointer;
-          opacity: 0.8;
-          transition: opacity 0.2s;
-        }
-
-        .dismiss-btn:hover {
-          opacity: 1;
-        }
-
-        @media (max-width: 600px) {
-          .warning-content {
-            flex-wrap: wrap;
-            gap: 10px;
-          }
-
-          .warning-text {
-            flex: 1 1 100%;
-            text-align: center;
-          }
-        }
-      `}</style>
     </div>
   );
 }

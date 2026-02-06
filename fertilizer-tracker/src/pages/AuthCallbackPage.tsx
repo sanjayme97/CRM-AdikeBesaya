@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { createUserFromSession } from '../services/auth/supabaseAuth';
+import './AuthCallbackPage.css';
 
 export function AuthCallbackPage() {
   const navigate = useNavigate();
@@ -101,12 +102,6 @@ export function AuthCallbackPage() {
       }} />
       <p style={{ marginTop: '20px', color: '#666' }}>Completing sign in...</p>
 
-      <style>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }
