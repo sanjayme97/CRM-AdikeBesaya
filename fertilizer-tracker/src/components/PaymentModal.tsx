@@ -125,6 +125,7 @@ export function PaymentModal({
 
   // Populate form when editing
   useEffect(() => {
+    if (!isOpen) return;
     if (mode === 'edit' && payment) {
       setFormData({
         quoteId: payment.quoteId || '',
@@ -154,7 +155,7 @@ export function PaymentModal({
       // Load initial quotation options when opening add modal
       loadInitialQuotations();
     }
-  }, [mode, payment, loadPaymentsForQuote]);
+  }, [isOpen, mode, payment, loadPaymentsForQuote]);
 
   // Fetch leads for a list of quotations
   const fetchLeadsForQuotations = useCallback(async (quotations: Quotation[]) => {

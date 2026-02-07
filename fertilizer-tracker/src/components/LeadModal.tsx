@@ -66,6 +66,7 @@ export function LeadModal({
 
   // Populate form when viewing or editing
   useEffect(() => {
+    if (!isOpen) return;
     if ((mode === 'view' || mode === 'edit') && lead) {
       setFormData({
         farmerName: lead.farmerName || '',
@@ -87,7 +88,7 @@ export function LeadModal({
     } else if (mode === 'add') {
       setFormData(initialFormData);
     }
-  }, [mode, lead]);
+  }, [isOpen, mode, lead]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -415,6 +416,18 @@ export function LeadModal({
                   ))}
                 </select>
               </div>
+
+              {lead && lead.createdBy && (
+                <div className="form-group">
+                  <label>Created By</label>
+                  <input
+                    type="text"
+                    value={lead.createdBy.split('@')[0]}
+                    disabled
+                    className="readonly-field"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="form-group full-width">

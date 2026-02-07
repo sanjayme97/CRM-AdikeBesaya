@@ -11,6 +11,7 @@ function mapLeadFromDB(row: any): Lead {
     rowNumber: row.row_number,
     displayId: row.display_id,
     createdDate: row.created_date,
+    createdBy: row.created_by,
     farmerName: row.farmer_name,
     phone: row.phone,
     whatsapp: row.whatsapp || '',
@@ -41,6 +42,7 @@ function mapLeadToDB(lead: Partial<Lead>): any {
   const mapped: any = {};
 
   if (lead.id) mapped.id = lead.id;
+  if (lead.createdBy) mapped.created_by = lead.createdBy;
   if (lead.farmerName) mapped.farmer_name = lead.farmerName;
   if (lead.phone) mapped.phone = lead.phone;
   if (lead.whatsapp !== undefined) mapped.whatsapp = lead.whatsapp || null;

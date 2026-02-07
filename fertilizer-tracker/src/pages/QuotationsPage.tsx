@@ -457,7 +457,7 @@ export function QuotationsPage() {
                     <th>Valid Until</th>
                     <th>Prepared By</th>
                     <th>Status</th>
-                    {activeTab === 'pending-payment' && <th>Delivery</th>}
+                    <th>Delivery</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -490,13 +490,11 @@ export function QuotationsPage() {
                           {quotation.status}
                         </span>
                       </td>
-                      {activeTab === 'pending-payment' && (
-                        <td>
-                          <span className={`delivery-badge ${(quotation.deliveryStatus || '').toLowerCase()}`}>
-                            {quotation.deliveryStatus || '-'}
-                          </span>
-                        </td>
-                      )}
+                      <td>
+                        <span className={`delivery-badge ${(quotation.deliveryStatus || '').toLowerCase()}`}>
+                          {quotation.deliveryStatus || '-'}
+                        </span>
+                      </td>
                       <td className="actions">
                         <button
                           className="btn-icon"
@@ -600,7 +598,7 @@ export function QuotationsPage() {
                   <p className="card-info">
                     ⏳ Valid until: {formatDate(quotation.validUntil)}
                   </p>
-                  {activeTab === 'pending-payment' && quotation.deliveryStatus && (
+                  {quotation.deliveryStatus && (
                     <p className="card-info">
                       🚚 Delivery: {quotation.deliveryStatus}
                     </p>

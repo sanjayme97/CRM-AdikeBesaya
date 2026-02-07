@@ -81,6 +81,7 @@ export function FieldVisitModal({
 
   // Populate form when editing
   useEffect(() => {
+    if (!isOpen) return;
     if (mode === 'edit' && visit) {
       setFormData({
         leadId: visit.leadId || '',
@@ -114,7 +115,7 @@ export function FieldVisitModal({
       // Load initial lead options when opening add modal
       loadInitialLeads();
     }
-  }, [mode, visit]);
+  }, [isOpen, mode, visit]);
 
   // Load initial 100 leads when modal opens for add mode
   const loadInitialLeads = useCallback(async () => {
@@ -187,8 +188,8 @@ export function FieldVisitModal({
         updates.assignedTo = '';
       }
 
-      // Clear visitedBy, quotationRequested, assignedTo when status changes away from Visited
-      if (name === 'status' && value !== 'Visited') {
+      // Clear visitedBy, quotationRequested, assignedTo when status changes away from Visited/Completed
+      if (name === 'status' && value !== 'Visited' && value !== 'Completed') {
         updates.visitedBy = [];
         updates.quotationRequested = false;
         updates.assignedTo = '';
@@ -710,10 +711,10 @@ export function FieldVisitModal({
                 )}
               </div>
 
-              {/* Visited By - always visible, disabled when status is not Visited */}
+              {/* Visited By - always visible, disabled when status is not Visited/Completed */}
               <div className="form-group full-width">
                 <label>Visited By</label>
-                <div className={`multi-select-container ${isReadOnly || formData.status !== 'Visited' ? 'disabled' : ''}`}>
+                <div className={`multi-select-container ${isReadOnly || (formData.status !== 'Visited' && formData.status !== 'Completed') ? 'disabled' : ''}`}>
                   <div className="chips-container">
                     {(isReadOnly && visit ? visit.visitedBy : formData.visitedBy).map((email) => {
                       const user = lookups.users.find((u) => u.email === email);
@@ -721,7 +722,7 @@ export function FieldVisitModal({
                         <span key={email} className="chip">
                           {email.split('@')[0]}
                           {user && ` (${user.role})`}
-                          {!isReadOnly && formData.status === 'Visited' && (
+                          {!isReadOnly && (formData.status === 'Visited' || formData.status === 'Completed') && (
                             <button
                               type="button"
                               className="chip-remove"
@@ -736,7 +737,7 @@ export function FieldVisitModal({
                         </span>
                       );
                     })}
-                    {!isReadOnly && formData.status === 'Visited' && (
+                    {!isReadOnly && (formData.status === 'Visited' || formData.status === 'Completed') && (
                       <select
                         className="add-user-select"
                         value=""
@@ -759,7 +760,7 @@ export function FieldVisitModal({
                           ))}
                       </select>
                     )}
-                    {(isReadOnly || formData.status !== 'Visited') && formData.visitedBy.length === 0 && (
+                    {(isReadOnly || (formData.status !== 'Visited' && formData.status !== 'Completed')) && formData.visitedBy.length === 0 && (
                       <span className="empty-placeholder">-</span>
                     )}
                   </div>
@@ -796,7 +797,7 @@ export function FieldVisitModal({
                   name="assignedTo"
                   value={isReadOnly && visit ? visit.assignedTo : formData.assignedTo}
                   onChange={handleChange}
-                  disabled={isReadOnly || !formData.quotationRequested || (mode === 'edit' && wasQuotationRequested)}
+                  disabled={isReadOnly || !formData.quotationRequested}
                   required={formData.quotationRequested}
                 >
                   <option value="">Select User</option>

@@ -17,7 +17,6 @@ interface ProductModalProps {
   onSave: (productData: Partial<Product>) => Promise<void>;
 }
 
-const UNIT_OPTIONS = ['unit', 'kg', 'g', 'litre', 'ml', 'bag', 'bottle', 'pouch', 'pack'];
 
 const initialFormData = {
   sku: '',
@@ -26,7 +25,7 @@ const initialFormData = {
   description: '',
   dosage: '',
   unitPrice: 0,
-  unit: 'unit',
+  unit: '',
   category: '',
   isActive: true,
   displayOrder: 0,
@@ -221,19 +220,15 @@ export function ProductModal({
                   {isReadOnly ? (
                     <span className="readonly-value">{product?.unit}</span>
                   ) : (
-                    <select
+                    <input
+                      type="text"
                       id="unit"
                       name="unit"
                       value={formData.unit}
                       onChange={handleChange}
+                      placeholder="e.g. 50 ml, 1 kg, 250 g"
                       required
-                    >
-                      {UNIT_OPTIONS.map((u) => (
-                        <option key={u} value={u}>
-                          {u}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   )}
                 </div>
 

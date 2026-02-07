@@ -71,10 +71,10 @@ export async function fetchUserRole(email: string): Promise<string> {
 /**
  * Check if user email is in allowed_users table
  */
-async function checkUserAllowed(email: string): Promise<{ allowed: boolean; role?: string }> {
+async function checkUserAllowed(email: string): Promise<{ allowed: boolean; role?: string; canAskDb?: boolean }> {
   const { data, error } = await supabase
     .from('allowed_users')
-    .select('role, is_active')
+    .select('role, is_active, can_ask_db')
     .eq('email', email)
     .eq('is_active', true)
     .single();
@@ -87,7 +87,7 @@ async function checkUserAllowed(email: string): Promise<{ allowed: boolean; role
     throw new Error(`Failed to check user access: ${error.message}`);
   }
 
-  return { allowed: true, role: data.role };
+  return { allowed: true, role: data.role, canAskDb: data.can_ask_db };
 }
 
 /**
@@ -108,7 +108,7 @@ export async function createUserFromSession(): Promise<User | null> {
   const picture = user.user_metadata?.avatar_url || user.user_metadata?.picture;
 
   // Check if user is in allowed_users table
-  const { allowed, role } = await checkUserAllowed(email);
+  const { allowed, role, canAskDb } = await checkUserAllowed(email);
 
   if (!allowed) {
     // User is not authorized - sign them out immediately
@@ -125,6 +125,7 @@ export async function createUserFromSession(): Promise<User | null> {
     name,
     picture,
     role: role || 'Field Agronomist',
+    canAskDb: canAskDb || false,
   };
 }
 

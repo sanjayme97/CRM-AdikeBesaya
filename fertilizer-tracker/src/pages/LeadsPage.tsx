@@ -163,9 +163,11 @@ export function LeadsPage() {
 
   const handleSave = async (leadData: Partial<Lead>) => {
     if (modalMode === 'add') {
-      await createLead(
-        leadData as Omit<Lead, 'id' | 'rowNumber' | 'displayId' | 'createdDate' | 'lastUpdated' | 'isDeleted' | 'deletedBy' | 'deletedDate' | 'deleteReason'>
-      );
+      await createLead({
+        ...leadData,
+        createdBy: user!.email, // Set current user as creator
+        leadOwner: leadData.leadOwner || user!.email, // Default to current user if not selected
+      } as Omit<Lead, 'id' | 'rowNumber' | 'displayId' | 'createdDate' | 'lastUpdated' | 'isDeleted' | 'deletedBy' | 'deletedDate' | 'deleteReason'>);
     } else if (modalMode === 'edit' && selectedLead) {
       await updateLead(selectedLead.id, leadData);
     }

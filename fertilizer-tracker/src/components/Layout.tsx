@@ -11,6 +11,7 @@ import { useAuthStore } from '../store/authStore';
 import { useModalStore } from '../store/modalStore';
 import { useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { getAccessibleNavItems, type UserRole} from '../config/roles';
+import { AskDatabase } from './AskDatabase';
 import './Layout.css';
 
 interface LayoutProps {
@@ -140,6 +141,7 @@ export function Layout({ children }: LayoutProps) {
         </footer>
       </main>
 
+      <AskDatabase />
     </div>
   );
 }

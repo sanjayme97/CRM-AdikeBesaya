@@ -23,6 +23,7 @@ import {
   searchLeads,
   fetchUsers,
   createQuotation,
+  updateQuotation,
   fetchQuotationByVisitId,
 } from '../services/backend';
 import type { FieldVisit, Lead, TalukWithDistrict } from '../types';
@@ -244,14 +245,13 @@ export function FieldVisitsPage() {
     } else if (modalMode === 'edit' && selectedVisit) {
       await updateFieldVisit(selectedVisit.id, visitData);
 
-      // Auto-create quotation if requested and doesn't already exist
-      // This handles the case where user edits a visit to mark it as Visited/Successful and requests quotation
+      // Handle quotation: create if none exists, or update preparedBy if still Draft
       if (visitData.quotationRequested === true && visitData.assignedTo) {
         try {
-          // Check if quotation already exists for this visit
           const existingQuotation = await fetchQuotationByVisitId(selectedVisit.id);
 
           if (!existingQuotation) {
+            // No quotation yet — create one
             const today = new Date();
             const validUntil = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
 
@@ -266,10 +266,14 @@ export function FieldVisitsPage() {
               notes: `Auto-created from visit ${selectedVisit.displayId}`,
             });
             console.log('Auto-created quotation for visit:', selectedVisit.displayId);
+          } else if (existingQuotation.status === 'Draft' && existingQuotation.preparedBy !== visitData.assignedTo) {
+            // Quotation exists in Draft — reassign preparedBy
+            await updateQuotation(existingQuotation.id, { preparedBy: visitData.assignedTo });
+            console.log('Updated quotation preparedBy to:', visitData.assignedTo);
           }
         } catch (quotationError) {
-          console.error('Failed to auto-create quotation:', quotationError);
-          alert('Visit saved, but failed to auto-create quotation. Please create it manually.');
+          console.error('Failed to handle quotation:', quotationError);
+          alert('Visit saved, but failed to update quotation assignment. Please update it manually.');
         }
       }
     }

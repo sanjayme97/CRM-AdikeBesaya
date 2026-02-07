@@ -130,6 +130,7 @@ export function QuotationModal({
 
   // Populate form when editing/viewing or reset when adding
   useEffect(() => {
+    if (!isOpen) return;
     if ((mode === 'edit' || mode === 'view') && quotation) {
       setFormData({
         leadId: quotation.leadId || '',
@@ -165,7 +166,7 @@ export function QuotationModal({
       // Load initial lead options when opening add modal
       loadInitialLeads();
     }
-  }, [mode, quotation, loadVisitsForLead, loadInitialLeads]);
+  }, [isOpen, mode, quotation, loadVisitsForLead, loadInitialLeads]);
 
   // Load products and line items when modal opens
   useEffect(() => {

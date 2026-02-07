@@ -264,11 +264,8 @@ export function QuotationPDF({ quotation, lead, visit, lineItems, products }: Qu
         <View style={styles.docInfoBox}>
           <View style={styles.docInfoRow}>
             <Text>Q Number: <Text style={styles.bold}>{quotation.displayId}</Text></Text>
+            <Text style={[styles.bold, { fontSize: 11 }]}>EVALUATION</Text>
             <Text>Date: <Text style={styles.bold}>{formatDate(quotation.quoteDate)}</Text></Text>
-          </View>
-          <View style={styles.docInfoRow}>
-            <Text> </Text>
-            <Text>Evaluation</Text>
           </View>
         </View>
 
@@ -351,6 +348,11 @@ export function QuotationPDF({ quotation, lead, visit, lineItems, products }: Qu
         )}
 
         {/* 6. Pricing tables by category */}
+        {lineItems.length > 0 && (
+          <Text style={[styles.sectionTitle, { textTransform: 'uppercase', marginBottom: 6 }]}>
+            Quotation
+          </Text>
+        )}
         {lineItems.length > 0 && Array.from(grouped.entries()).map(([category, items]) => {
           const categoryTotal = items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
           return (
