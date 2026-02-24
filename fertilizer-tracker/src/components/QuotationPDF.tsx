@@ -322,41 +322,65 @@ export function QuotationPDF({ quotation, lead, visit, lineItems, products }: Qu
         )}
 
         {/* 5. Materials required — descriptive list */}
-        {lineItems.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Materials required;</Text>
-            {Array.from(grouped.entries()).map(([category, items]) => (
-              <View key={category} style={{ marginBottom: 6 }}>
-                <Text style={[styles.bold, { marginBottom: 3 }]}>{category} Materials;</Text>
-                {items.map((item, idx) => {
-                  const product = products.find((p) => p.id === item.productId);
-                  return (
-                    <View key={idx} style={styles.bulletItem}>
-                      <Text style={styles.bullet}>{'\u2022'}</Text>
-                      <Text style={styles.bulletText}>
-                        {item.productName}
-                        {product?.dosage ? ` - ${product.dosage}` : ''}
-                        {` = ${item.quantity}`}
-                        {product?.description ? ` (${product.description})` : ''}
-                      </Text>
-                    </View>
-                  );
-                })}
+        {lineItems.length > 0 && (() => {
+          const allBullets: { category: string; item: LineItemRow; product: Product | undefined; isFirstInCategory: boolean }[] = [];
+          grouped.forEach((items, category) => {
+            items.forEach((item, idx) => {
+              allBullets.push({
+                category,
+                item,
+                product: products.find((p) => p.id === item.productId),
+                isFirstInCategory: idx === 0,
+              });
+            });
+          });
+
+          return allBullets.map((entry, bulletIdx) => {
+            const bulletContent = (
+              <>
+                {entry.isFirstInCategory && (
+                  <Text style={[styles.bold, { marginBottom: 3 }]}>{entry.category} Materials;</Text>
+                )}
+                <View style={styles.bulletItem}>
+                  <Text style={styles.bullet}>{'\u2022'}</Text>
+                  <Text style={styles.bulletText}>
+                    {entry.item.productName}
+                    {entry.product?.dosage ? ` - ${entry.product.dosage}` : ''}
+                    {` = ${entry.item.quantity}`}
+                    {entry.product?.description ? ` (${entry.product.description})` : ''}
+                  </Text>
+                </View>
+              </>
+            );
+
+            // First bullet: wrap heading + first bullet together so heading is never orphaned
+            if (bulletIdx === 0) {
+              return (
+                <View key={`${entry.category}-${bulletIdx}`} wrap={false} style={{ marginBottom: 3 }}>
+                  <Text style={styles.sectionTitle}>Materials required;</Text>
+                  {bulletContent}
+                </View>
+              );
+            }
+
+            return (
+              <View key={`${entry.category}-${bulletIdx}`} style={{ marginBottom: 3 }}>
+                {bulletContent}
               </View>
-            ))}
-          </View>
-        )}
+            );
+          });
+        })()}
 
         {/* 6. Pricing tables by category */}
-        {lineItems.length > 0 && (
-          <Text style={[styles.sectionTitle, { textTransform: 'uppercase', marginBottom: 6 }]}>
-            Quotation
-          </Text>
-        )}
-        {lineItems.length > 0 && Array.from(grouped.entries()).map(([category, items]) => {
+        {lineItems.length > 0 && Array.from(grouped.entries()).map(([category, items], groupIdx) => {
           const categoryTotal = items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
           return (
-            <View key={category} style={{ marginBottom: 10 }} wrap={false}>
+            <View key={category} style={{ marginBottom: 10 }} wrap={true}>
+              {groupIdx === 0 && (
+                <Text style={[styles.sectionTitle, { textTransform: 'uppercase', marginBottom: 6 }]}>
+                  Quotation
+                </Text>
+              )}
               <Text style={styles.categoryTitle}>{category}</Text>
               <View style={styles.table}>
                 {/* Header */}
