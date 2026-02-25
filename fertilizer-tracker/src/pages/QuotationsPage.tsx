@@ -31,8 +31,10 @@ import {
   fetchVisitsByLeadId,
   fetchDeliveredQuotations,
   getPaymentTotalsByQuoteIds,
-} from '../services/sheetsService';
+} from '../services/backend';
+import { countQuotations } from '../services/supabase/quotations';
 import type { Quotation, Lead, TalukWithDistrict } from '../types';
+import './QuotationsPage.css';
 
 const PAGE_SIZE = 50;
 
@@ -214,14 +216,14 @@ export function QuotationsPage() {
 
   const updateTabCounts = async () => {
     try {
-      // Get counts for each tab
-      const [allQuotes, myQuotes, deliveredQuotes] = await Promise.all([
-        fetchQuotations(0), // All quotes (no limit)
-        user?.email ? fetchQuotations(0, 0, undefined, user.email) : Promise.resolve([]),
+      // Count-only queries for "All" and "My Work" (no row data transferred)
+      const [allCount, myCount, deliveredQuotes] = await Promise.all([
+        countQuotations(),
+        user?.email ? countQuotations(user.email) : Promise.resolve(0),
         fetchDeliveredQuotations(),
       ]);
 
-      // For pending payment, we need to calculate which have balance
+      // For pending payment, we still need row data to calculate balances
       let pendingPaymentCount = 0;
       if (deliveredQuotes.length > 0) {
         const quoteIds = deliveredQuotes.map(q => q.id);
@@ -233,8 +235,8 @@ export function QuotationsPage() {
       }
 
       setTabCounts({
-        all: allQuotes.length,
-        myWork: myQuotes.length,
+        all: allCount,
+        myWork: myCount,
         pendingPayment: pendingPaymentCount,
       });
     } catch (err) {
@@ -290,16 +292,20 @@ export function QuotationsPage() {
     closeWithHistory();
   };
 
-  const handleSave = async (quotationData: Partial<Quotation>) => {
+  const handleSave = async (quotationData: Partial<Quotation>): Promise<string | void> => {
     if (!user?.email) throw new Error('Not authenticated');
 
     if (modalMode === 'add') {
-      await createQuotation({
+      const created = await createQuotation({
         ...quotationData,
         preparedBy: quotationData.preparedBy || user.email,
       } as Omit<Quotation, 'id' | 'rowNumber' | 'displayId' | 'lastUpdated' | 'isDeleted' | 'deletedBy' | 'deletedDate' | 'deleteReason'>);
+      await loadDataForTab();
+      return created.id;
     } else if (modalMode === 'edit' && selectedQuotation) {
       await updateQuotation(selectedQuotation.id, quotationData);
+      await loadDataForTab();
+      return selectedQuotation.id;
     }
 
     await loadDataForTab();
@@ -451,7 +457,7 @@ export function QuotationsPage() {
                     <th>Valid Until</th>
                     <th>Prepared By</th>
                     <th>Status</th>
-                    {activeTab === 'pending-payment' && <th>Delivery</th>}
+                    <th>Delivery</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -484,13 +490,11 @@ export function QuotationsPage() {
                           {quotation.status}
                         </span>
                       </td>
-                      {activeTab === 'pending-payment' && (
-                        <td>
-                          <span className={`delivery-badge ${(quotation.deliveryStatus || '').toLowerCase()}`}>
-                            {quotation.deliveryStatus || '-'}
-                          </span>
-                        </td>
-                      )}
+                      <td>
+                        <span className={`delivery-badge ${(quotation.deliveryStatus || '').toLowerCase()}`}>
+                          {quotation.deliveryStatus || '-'}
+                        </span>
+                      </td>
                       <td className="actions">
                         <button
                           className="btn-icon"
@@ -594,7 +598,7 @@ export function QuotationsPage() {
                   <p className="card-info">
                     ⏳ Valid until: {formatDate(quotation.validUntil)}
                   </p>
-                  {activeTab === 'pending-payment' && quotation.deliveryStatus && (
+                  {quotation.deliveryStatus && (
                     <p className="card-info">
                       🚚 Delivery: {quotation.deliveryStatus}
                     </p>
@@ -678,433 +682,6 @@ export function QuotationsPage() {
         onSave={handleLeadSave}
       />
 
-      <style>{`
-        .quotations-page {
-          width: 100%;
-        }
-
-        .page-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 20px;
-        }
-
-        .page-header h1 {
-          margin: 0;
-          font-size: 28px;
-          color: #333;
-        }
-
-        .btn-primary {
-          background: #667eea;
-          color: white;
-          border: none;
-          padding: 12px 24px;
-          border-radius: 6px;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-        }
-
-        .btn-primary:hover {
-          background: #5568d3;
-        }
-
-        /* Filter Tabs */
-        .filter-tabs {
-          display: flex;
-          gap: 8px;
-          margin-bottom: 20px;
-          flex-wrap: wrap;
-        }
-
-        .filter-tab {
-          padding: 10px 20px;
-          border: 2px solid #e0e0e0;
-          background: white;
-          border-radius: 20px;
-          font-size: 14px;
-          font-weight: 500;
-          color: #666;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .filter-tab:hover {
-          border-color: #667eea;
-          color: #667eea;
-        }
-
-        .filter-tab.active {
-          background: #667eea;
-          border-color: #667eea;
-          color: white;
-        }
-
-        .search-bar {
-          margin-bottom: 20px;
-        }
-
-        .search-input {
-          width: 100%;
-          max-width: 500px;
-          padding: 12px 16px;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 14px;
-        }
-
-        .search-input:focus {
-          outline: none;
-          border-color: #667eea;
-        }
-
-        .error-text {
-          color: #e53e3e;
-          padding: 12px;
-          background: #fee;
-          border-radius: 6px;
-        }
-
-        /* Table View (Desktop) */
-        .table-view {
-          display: block;
-          background: white;
-          border-radius: 8px;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-          overflow-x: auto;
-          max-width: 100%;
-        }
-
-        .card-view {
-          display: none;
-        }
-
-        .quotations-table {
-          width: 100%;
-          min-width: 900px;
-          border-collapse: collapse;
-        }
-
-        .quotations-table th {
-          background: #f8f9fa;
-          padding: 12px 16px;
-          text-align: left;
-          font-weight: 600;
-          font-size: 13px;
-          color: #666;
-          text-transform: uppercase;
-          border-bottom: 2px solid #e9ecef;
-        }
-
-        .quotations-table td {
-          padding: 16px;
-          border-bottom: 1px solid #e9ecef;
-          font-size: 14px;
-          color: #333;
-        }
-
-        .quotations-table tbody tr:hover {
-          background: #f8f9fa;
-        }
-
-        .farmer-cell {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-
-        .farmer-cell .farmer-name {
-          font-weight: 500;
-        }
-
-        .farmer-cell .lead-id {
-          font-size: 12px;
-          color: #667eea;
-        }
-
-        .clickable {
-          cursor: pointer;
-          text-decoration: underline;
-        }
-
-        .clickable:hover {
-          color: #5568d3;
-        }
-
-        .amount-cell {
-          font-weight: 600;
-          color: #2e7d32;
-        }
-
-        .paid-cell {
-          font-weight: 500;
-          color: #1976d2;
-        }
-
-        .balance-cell {
-          font-weight: 600;
-          color: #c62828;
-        }
-
-        .status-badge {
-          padding: 4px 12px;
-          border-radius: 12px;
-          font-size: 12px;
-          font-weight: 500;
-        }
-
-        .status-badge.draft {
-          background: #fff3cd;
-          color: #856404;
-        }
-
-        .status-badge.sent {
-          background: #e3f2fd;
-          color: #1565c0;
-        }
-
-        .status-badge.accepted {
-          background: #d4edda;
-          color: #155724;
-        }
-
-        .status-badge.rejected {
-          background: #f8d7da;
-          color: #721c24;
-        }
-
-        .status-badge.expired {
-          background: #e2e3e5;
-          color: #383d41;
-        }
-
-        .delivery-badge {
-          padding: 4px 10px;
-          border-radius: 10px;
-          font-size: 11px;
-          font-weight: 500;
-        }
-
-        .delivery-badge.delivered {
-          background: #d4edda;
-          color: #155724;
-        }
-
-        .delivery-badge.partial {
-          background: #fff3cd;
-          color: #856404;
-        }
-
-        .delivery-badge.pending {
-          background: #e2e3e5;
-          color: #383d41;
-        }
-
-        .delivery-badge.scheduled {
-          background: #e3f2fd;
-          color: #1565c0;
-        }
-
-        .actions {
-          display: flex;
-          gap: 8px;
-        }
-
-        .btn-icon {
-          background: none;
-          border: none;
-          cursor: pointer;
-          font-size: 16px;
-          padding: 4px 8px;
-          border-radius: 4px;
-        }
-
-        .btn-icon:hover {
-          background: #f0f0f0;
-        }
-
-        .btn-danger {
-          color: #e53e3e;
-        }
-
-        .no-data {
-          text-align: center;
-          padding: 40px;
-          color: #666;
-        }
-
-        .load-more-container {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          padding: 20px;
-          gap: 10px;
-        }
-
-        .btn-load-more {
-          background: white;
-          border: 2px solid #667eea;
-          color: #667eea;
-          padding: 12px 32px;
-          border-radius: 6px;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .btn-load-more:hover:not(:disabled) {
-          background: #667eea;
-          color: white;
-        }
-
-        .btn-load-more:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .quotations-count {
-          margin: 0;
-          font-size: 13px;
-          color: #666;
-        }
-
-        .quotations-count.center {
-          text-align: center;
-          padding: 20px;
-        }
-
-        /* Mobile: Card View */
-        @media (max-width: 768px) {
-          .table-view {
-            display: none;
-          }
-
-          .card-view {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-          }
-
-          .quotation-card {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-          }
-
-          .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-          }
-
-          .quotation-id {
-            font-weight: 600;
-            color: #667eea;
-          }
-
-          .farmer-name {
-            margin: 0 0 10px 0;
-            font-size: 18px;
-            color: #333;
-          }
-
-          .card-info {
-            margin: 5px 0;
-            font-size: 14px;
-            color: #666;
-          }
-
-          .card-info.amount {
-            font-size: 20px;
-            font-weight: 600;
-            color: #2e7d32;
-            margin: 10px 0;
-          }
-
-          .balance-info {
-            background: #fff8e1;
-            padding: 10px;
-            border-radius: 6px;
-            margin: 10px 0;
-          }
-
-          .balance-info .card-info {
-            margin: 3px 0;
-          }
-
-          .paid-amount {
-            font-weight: 600;
-            color: #1976d2;
-          }
-
-          .balance-amount {
-            font-weight: 600;
-            color: #c62828;
-          }
-
-          .lead-ref {
-            color: #667eea;
-            font-weight: 500;
-          }
-
-          .card-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-          }
-
-          .btn-secondary {
-            flex: 1;
-            background: white;
-            border: 1px solid #667eea;
-            color: #667eea;
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-size: 13px;
-            cursor: pointer;
-          }
-
-          .btn-secondary:hover {
-            background: #f0f0f0;
-          }
-
-          .card-actions .btn-danger {
-            flex: 1;
-            background: white;
-            border: 1px solid #e53e3e;
-            color: #e53e3e;
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-size: 13px;
-            cursor: pointer;
-          }
-
-          .page-header {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 15px;
-          }
-
-          .filter-tabs {
-            width: 100%;
-          }
-
-          .filter-tab {
-            padding: 8px 14px;
-            font-size: 13px;
-          }
-
-          .search-input {
-            max-width: 100%;
-            width: 90%;
-          }
-        }
-      `}</style>
     </Layout>
   );
 }

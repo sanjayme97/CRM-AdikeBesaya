@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import type { Lead, TalukWithDistrict } from '../types';
+import './LeadModal.css';
 
 interface LeadModalProps {
   isOpen: boolean;
@@ -65,6 +66,7 @@ export function LeadModal({
 
   // Populate form when viewing or editing
   useEffect(() => {
+    if (!isOpen) return;
     if ((mode === 'view' || mode === 'edit') && lead) {
       setFormData({
         farmerName: lead.farmerName || '',
@@ -86,7 +88,7 @@ export function LeadModal({
     } else if (mode === 'add') {
       setFormData(initialFormData);
     }
-  }, [mode, lead]);
+  }, [isOpen, mode, lead]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -414,6 +416,18 @@ export function LeadModal({
                   ))}
                 </select>
               </div>
+
+              {lead && lead.createdBy && (
+                <div className="form-group">
+                  <label>Created By</label>
+                  <input
+                    type="text"
+                    value={lead.createdBy.split('@')[0]}
+                    disabled
+                    className="readonly-field"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="form-group full-width">
@@ -464,247 +478,6 @@ export function LeadModal({
         </form>
       </div>
 
-      <style>{`
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          padding: 20px;
-        }
-
-        .modal-content {
-          background: white;
-          border-radius: 12px;
-          max-width: 700px;
-          width: 100%;
-          max-height: 90vh;
-          display: flex;
-          flex-direction: column;
-          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-        }
-
-        .modal-header {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-          padding: 20px 24px;
-          border-bottom: 1px solid #e9ecef;
-          background: white;
-          border-radius: 12px 12px 0 0;
-          flex-shrink: 0;
-        }
-
-        .modal-header h2 {
-          margin: 0;
-          font-size: 20px;
-          color: #333;
-          flex: 1;
-        }
-
-        .lead-display-id {
-          background: #667eea;
-          color: white;
-          padding: 4px 12px;
-          border-radius: 12px;
-          font-size: 13px;
-          font-weight: 500;
-        }
-
-        .modal-close {
-          background: none;
-          border: none;
-          font-size: 28px;
-          cursor: pointer;
-          color: #666;
-          line-height: 1;
-          padding: 0;
-        }
-
-        .modal-close:hover {
-          color: #333;
-        }
-
-        .modal-error {
-          background: #fee;
-          color: #c00;
-          padding: 12px 24px;
-          border-bottom: 1px solid #fcc;
-        }
-
-        .modal-form {
-          display: flex;
-          flex-direction: column;
-          flex: 1;
-          min-height: 0;
-        }
-
-        .modal-body {
-          flex: 1;
-          overflow-y: auto;
-          padding: 24px;
-        }
-
-        .modal-footer {
-          display: flex;
-          justify-content: flex-end;
-          gap: 12px;
-          padding: 16px 24px;
-          border-top: 1px solid #e9ecef;
-          background: white;
-          border-radius: 0 0 12px 12px;
-          flex-shrink: 0;
-        }
-
-        .form-section {
-          margin-bottom: 24px;
-        }
-
-        .form-section h3 {
-          font-size: 14px;
-          font-weight: 600;
-          color: #667eea;
-          text-transform: uppercase;
-          margin: 0 0 16px 0;
-          padding-bottom: 8px;
-          border-bottom: 2px solid #e9ecef;
-        }
-
-        .form-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 16px;
-        }
-
-        .form-grid.metadata {
-          grid-template-columns: repeat(2, 1fr);
-        }
-
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-
-        .form-group label {
-          font-size: 13px;
-          font-weight: 500;
-          color: #555;
-        }
-
-        .form-group input,
-        .form-group select {
-          padding: 10px 12px;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 14px;
-          transition: border-color 0.2s;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus {
-          outline: none;
-          border-color: #667eea;
-        }
-
-        .form-group input:disabled,
-        .form-group select:disabled,
-        .form-group textarea:disabled {
-          background: #f5f5f5;
-          cursor: default;
-        }
-
-        .form-group textarea {
-          padding: 10px 12px;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 14px;
-          font-family: inherit;
-          resize: vertical;
-          min-height: 80px;
-          transition: border-color 0.2s;
-        }
-
-        .form-group textarea:focus {
-          outline: none;
-          border-color: #667eea;
-        }
-
-        .form-group.full-width {
-          grid-column: 1 / -1;
-        }
-
-        .metadata-value {
-          font-size: 14px;
-          color: #333;
-          padding: 10px 0;
-        }
-
-        .btn-cancel {
-          background: white;
-          border: 1px solid #ddd;
-          color: #666;
-          padding: 10px 20px;
-          border-radius: 6px;
-          font-size: 14px;
-          cursor: pointer;
-        }
-
-        .btn-cancel:hover {
-          background: #f5f5f5;
-        }
-
-        .btn-save {
-          background: #667eea;
-          border: none;
-          color: white;
-          padding: 10px 24px;
-          border-radius: 6px;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-        }
-
-        .btn-save:hover:not(:disabled) {
-          background: #5568d3;
-        }
-
-        .btn-save:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        @media (max-width: 600px) {
-          .modal-overlay {
-            padding: 0;
-            align-items: flex-end;
-          }
-
-          .modal-content {
-            max-height: 95vh;
-            border-radius: 12px 12px 0 0;
-          }
-
-          .form-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .modal-footer {
-            flex-direction: column;
-          }
-
-          .btn-cancel,
-          .btn-save {
-            width: 100%;
-          }
-        }
-      `}</style>
     </div>
   );
 }

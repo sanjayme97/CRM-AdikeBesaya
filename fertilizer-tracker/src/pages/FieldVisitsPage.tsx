@@ -23,9 +23,11 @@ import {
   searchLeads,
   fetchUsers,
   createQuotation,
+  updateQuotation,
   fetchQuotationByVisitId,
-} from '../services/sheetsService';
+} from '../services/backend';
 import type { FieldVisit, Lead, TalukWithDistrict } from '../types';
+import './FieldVisitsPage.css';
 
 const PAGE_SIZE = 50;
 
@@ -243,14 +245,13 @@ export function FieldVisitsPage() {
     } else if (modalMode === 'edit' && selectedVisit) {
       await updateFieldVisit(selectedVisit.id, visitData);
 
-      // Auto-create quotation if requested and doesn't already exist
-      // This handles the case where user edits a visit to mark it as Visited/Successful and requests quotation
+      // Handle quotation: create if none exists, or update preparedBy if still Draft
       if (visitData.quotationRequested === true && visitData.assignedTo) {
         try {
-          // Check if quotation already exists for this visit
           const existingQuotation = await fetchQuotationByVisitId(selectedVisit.id);
 
           if (!existingQuotation) {
+            // No quotation yet — create one
             const today = new Date();
             const validUntil = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
 
@@ -265,10 +266,14 @@ export function FieldVisitsPage() {
               notes: `Auto-created from visit ${selectedVisit.displayId}`,
             });
             console.log('Auto-created quotation for visit:', selectedVisit.displayId);
+          } else if (existingQuotation.status === 'Draft' && existingQuotation.preparedBy !== visitData.assignedTo) {
+            // Quotation exists in Draft — reassign preparedBy
+            await updateQuotation(existingQuotation.id, { preparedBy: visitData.assignedTo });
+            console.log('Updated quotation preparedBy to:', visitData.assignedTo);
           }
         } catch (quotationError) {
-          console.error('Failed to auto-create quotation:', quotationError);
-          alert('Visit saved, but failed to auto-create quotation. Please create it manually.');
+          console.error('Failed to handle quotation:', quotationError);
+          alert('Visit saved, but failed to update quotation assignment. Please update it manually.');
         }
       }
     }
@@ -533,313 +538,6 @@ export function FieldVisitsPage() {
         onSave={handleLeadSave}
       />
 
-      <style>{`
-        .visits-page {
-          width: 100%;
-        }
-
-        .page-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 30px;
-        }
-
-        .page-header h1 {
-          margin: 0;
-          font-size: 28px;
-          color: #333;
-        }
-
-        .btn-primary {
-          background: #667eea;
-          color: white;
-          border: none;
-          padding: 12px 24px;
-          border-radius: 6px;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-        }
-
-        .btn-primary:hover {
-          background: #5568d3;
-        }
-
-        .search-bar {
-          margin-bottom: 20px;
-        }
-
-        .search-input {
-          width: 100%;
-          max-width: 500px;
-          padding: 12px 16px;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 14px;
-        }
-
-        .search-input:focus {
-          outline: none;
-          border-color: #667eea;
-        }
-
-        .error-text {
-          color: #e53e3e;
-          padding: 12px;
-          background: #fee;
-          border-radius: 6px;
-        }
-
-        /* Table View (Desktop) */
-        .table-view {
-          display: block;
-          background: white;
-          border-radius: 8px;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-          overflow-x: auto;
-          max-width: 100%;
-        }
-
-        .card-view {
-          display: none;
-        }
-
-        .visits-table {
-          width: 100%;
-          min-width: 900px;
-          border-collapse: collapse;
-        }
-
-        .visits-table th {
-          background: #f8f9fa;
-          padding: 12px 16px;
-          text-align: left;
-          font-weight: 600;
-          font-size: 13px;
-          color: #666;
-          text-transform: uppercase;
-          border-bottom: 2px solid #e9ecef;
-        }
-
-        .visits-table td {
-          padding: 16px;
-          border-bottom: 1px solid #e9ecef;
-          font-size: 14px;
-          color: #333;
-        }
-
-        .visits-table tbody tr:hover {
-          background: #f8f9fa;
-        }
-
-        .farmer-cell {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-
-        .farmer-cell .farmer-name {
-          font-weight: 500;
-        }
-
-        .farmer-cell .lead-id {
-          font-size: 12px;
-          color: #667eea;
-        }
-
-        .clickable {
-          cursor: pointer;
-          text-decoration: underline;
-        }
-
-        .clickable:hover {
-          color: #5568d3;
-        }
-
-        .status-badge {
-          padding: 4px 12px;
-          border-radius: 12px;
-          font-size: 12px;
-          font-weight: 500;
-        }
-
-        .status-badge.scheduled {
-          background: #e3f2fd;
-          color: #1565c0;
-        }
-
-        .status-badge.completed {
-          background: #d4edda;
-          color: #155724;
-        }
-
-        .status-badge.cancelled {
-          background: #f8d7da;
-          color: #721c24;
-        }
-
-        .actions {
-          display: flex;
-          gap: 8px;
-        }
-
-        .btn-icon {
-          background: none;
-          border: none;
-          cursor: pointer;
-          font-size: 16px;
-          padding: 4px 8px;
-          border-radius: 4px;
-        }
-
-        .btn-icon:hover {
-          background: #f0f0f0;
-        }
-
-        .btn-danger {
-          color: #e53e3e;
-        }
-
-        .no-data {
-          text-align: center;
-          padding: 40px;
-          color: #666;
-        }
-
-        .load-more-container {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          padding: 20px;
-          gap: 10px;
-        }
-
-        .btn-load-more {
-          background: white;
-          border: 2px solid #667eea;
-          color: #667eea;
-          padding: 12px 32px;
-          border-radius: 6px;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .btn-load-more:hover:not(:disabled) {
-          background: #667eea;
-          color: white;
-        }
-
-        .btn-load-more:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .visits-count {
-          margin: 0;
-          font-size: 13px;
-          color: #666;
-        }
-
-        .visits-count.center {
-          text-align: center;
-          padding: 20px;
-        }
-
-        /* Mobile: Card View */
-        @media (max-width: 768px) {
-          .table-view {
-            display: none;
-          }
-
-          .card-view {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-          }
-
-          .visit-card {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-          }
-
-          .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-          }
-
-          .visit-id {
-            font-weight: 600;
-            color: #667eea;
-          }
-
-          .farmer-name {
-            margin: 0 0 10px 0;
-            font-size: 18px;
-            color: #333;
-          }
-
-          .card-info {
-            margin: 5px 0;
-            font-size: 14px;
-            color: #666;
-          }
-
-          .lead-ref {
-            color: #667eea;
-            font-weight: 500;
-          }
-
-          .card-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-          }
-
-          .btn-secondary {
-            flex: 1;
-            background: white;
-            border: 1px solid #667eea;
-            color: #667eea;
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-size: 13px;
-            cursor: pointer;
-          }
-
-          .btn-secondary:hover {
-            background: #f0f0f0;
-          }
-
-          .card-actions .btn-danger {
-            flex: 1;
-            background: white;
-            border: 1px solid #e53e3e;
-            color: #e53e3e;
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-size: 13px;
-            cursor: pointer;
-          }
-
-          .page-header {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 15px;
-          }
-
-          .search-input {
-            max-width: 100%;
-            width:90%;
-          }
-        }
-      `}</style>
     </Layout>
   );
 }

@@ -8,7 +8,9 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { FieldVisit, Lead } from '../types';
+import { CROP_PROBLEMS } from '../types';
 import { uploadFile, getDownloadLink } from '../services/driveService';
+import './FieldVisitModal.css';
 
 interface FieldVisitModalProps {
   isOpen: boolean;
@@ -33,6 +35,7 @@ const initialFormData = {
   visitorId: '',
   visitOutcome: '',
   cropCondition: '',
+  identifiedProblems: [] as string[],
   diagnosisNotes: '',
   followUpDate: '',
   status: 'Scheduled',
@@ -55,6 +58,7 @@ export function FieldVisitModal({
   const [formData, setFormData] = useState(initialFormData);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [generatingPDF, setGeneratingPDF] = useState(false);
 
   // Track if quotation was already requested when modal opened (for field locking)
   const [wasQuotationRequested, setWasQuotationRequested] = useState(false);
@@ -77,6 +81,7 @@ export function FieldVisitModal({
 
   // Populate form when editing
   useEffect(() => {
+    if (!isOpen) return;
     if (mode === 'edit' && visit) {
       setFormData({
         leadId: visit.leadId || '',
@@ -85,6 +90,7 @@ export function FieldVisitModal({
         visitorId: visit.visitorId || '',
         visitOutcome: visit.visitOutcome || '',
         cropCondition: visit.cropCondition || '',
+        identifiedProblems: visit.identifiedProblems || [],
         diagnosisNotes: visit.diagnosisNotes || '',
         followUpDate: visit.followUpDate ? visit.followUpDate.split('T')[0] : '',
         status: visit.status || 'Scheduled',
@@ -109,7 +115,7 @@ export function FieldVisitModal({
       // Load initial lead options when opening add modal
       loadInitialLeads();
     }
-  }, [mode, visit]);
+  }, [isOpen, mode, visit]);
 
   // Load initial 100 leads when modal opens for add mode
   const loadInitialLeads = useCallback(async () => {
@@ -182,8 +188,8 @@ export function FieldVisitModal({
         updates.assignedTo = '';
       }
 
-      // Clear visitedBy, quotationRequested, assignedTo when status changes away from Visited
-      if (name === 'status' && value !== 'Visited') {
+      // Clear visitedBy, quotationRequested, assignedTo when status changes away from Visited/Completed
+      if (name === 'status' && value !== 'Visited' && value !== 'Completed') {
         updates.visitedBy = [];
         updates.quotationRequested = false;
         updates.assignedTo = '';
@@ -224,6 +230,31 @@ export function FieldVisitModal({
     setUploadedFileName(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  // Handle PDF generation
+  const handleGeneratePDF = async () => {
+    if (!visit) return;
+    setGeneratingPDF(true);
+    try {
+      const { pdf } = await import('@react-pdf/renderer');
+      const { FieldVisitPDF } = await import('./FieldVisitPDF');
+
+      const blob = await pdf(
+        FieldVisitPDF({
+          visit,
+          lead: viewLead || null,
+        })
+      ).toBlob();
+
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (err) {
+      console.error('PDF generation failed, falling back to browser print:', err);
+      window.print();
+    } finally {
+      setGeneratingPDF(false);
     }
   };
 
@@ -294,14 +325,26 @@ export function FieldVisitModal({
   const viewLead = visit ? leadMap.get(visit.leadId) : null;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay field-visit-modal" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        {/* Print-only header */}
+        <div className="print-only-header">
+          <h1>Fertilizer Tracker CRM</h1>
+          <p>Field Visit Report</p>
+          <p className="print-date">Printed on: {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}</p>
+        </div>
+
         <div className="modal-header">
           <h2>{title}</h2>
           {visit && mode !== 'add' && (
             <span className="visit-display-id">{visit.displayId}</span>
           )}
-          <button className="modal-close" onClick={onClose}>
+          {isReadOnly && (
+            <button className="btn-print no-print" onClick={handleGeneratePDF} disabled={generatingPDF} title="Print Visit Details">
+              {generatingPDF ? 'Generating...' : '🖨️ Print'}
+            </button>
+          )}
+          <button className="modal-close no-print" onClick={onClose}>
             &times;
           </button>
         </div>
@@ -546,6 +589,52 @@ export function FieldVisitModal({
                 </select>
               </div>
 
+              {/* Identified Problems - Checkboxes */}
+              <div className="form-group full-width">
+                <label>Identified Problems / Diseases (ಗುರುತಿಸಲಾದ ಸಮಸ್ಯೆಗಳು / ರೋಗಗಳು)</label>
+                <div className={`problems-grid ${isReadOnly ? 'disabled' : ''}`}>
+                  {CROP_PROBLEMS.map((problem) => {
+                    const problemKey = problem.en;
+                    const isChecked = isReadOnly && visit
+                      ? (visit.identifiedProblems || []).includes(problemKey)
+                      : formData.identifiedProblems.includes(problemKey);
+
+                    return (
+                      <label key={problemKey} className="problem-checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (!isReadOnly) {
+                              const checked = e.target.checked;
+                              setFormData((prev) => ({
+                                ...prev,
+                                identifiedProblems: checked
+                                  ? [...prev.identifiedProblems, problemKey]
+                                  : prev.identifiedProblems.filter((p) => p !== problemKey),
+                              }));
+                            }
+                          }}
+                          disabled={isReadOnly}
+                        />
+                        <span className="problem-text">
+                          <span className="problem-en">{problem.en}</span>
+                          <span className="problem-kn">{problem.kn}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {!isReadOnly && formData.identifiedProblems.length === 0 && (
+                  <p className="help-text">Select all problems that apply</p>
+                )}
+                {(isReadOnly || formData.identifiedProblems.length > 0) && (
+                  <p className="selected-count">
+                    {isReadOnly && visit ? visit.identifiedProblems?.length || 0 : formData.identifiedProblems.length} problem(s) selected
+                  </p>
+                )}
+              </div>
+
               <div className="form-group full-width">
                 <label htmlFor="diagnosisNotes">Diagnosis Notes</label>
                 <textarea
@@ -556,7 +645,11 @@ export function FieldVisitModal({
                   disabled={isReadOnly}
                   rows={3}
                   placeholder="Enter observations, diagnosis, and notes from the field visit..."
+                  className="screen-only"
                 />
+                <div className="print-only-text">
+                  {isReadOnly && visit ? visit.diagnosisNotes : formData.diagnosisNotes}
+                </div>
               </div>
 
               {/* File Attachment */}
@@ -618,10 +711,10 @@ export function FieldVisitModal({
                 )}
               </div>
 
-              {/* Visited By - always visible, disabled when status is not Visited */}
+              {/* Visited By - always visible, disabled when status is not Visited/Completed */}
               <div className="form-group full-width">
                 <label>Visited By</label>
-                <div className={`multi-select-container ${isReadOnly || formData.status !== 'Visited' ? 'disabled' : ''}`}>
+                <div className={`multi-select-container ${isReadOnly || (formData.status !== 'Visited' && formData.status !== 'Completed') ? 'disabled' : ''}`}>
                   <div className="chips-container">
                     {(isReadOnly && visit ? visit.visitedBy : formData.visitedBy).map((email) => {
                       const user = lookups.users.find((u) => u.email === email);
@@ -629,7 +722,7 @@ export function FieldVisitModal({
                         <span key={email} className="chip">
                           {email.split('@')[0]}
                           {user && ` (${user.role})`}
-                          {!isReadOnly && formData.status === 'Visited' && (
+                          {!isReadOnly && (formData.status === 'Visited' || formData.status === 'Completed') && (
                             <button
                               type="button"
                               className="chip-remove"
@@ -644,7 +737,7 @@ export function FieldVisitModal({
                         </span>
                       );
                     })}
-                    {!isReadOnly && formData.status === 'Visited' && (
+                    {!isReadOnly && (formData.status === 'Visited' || formData.status === 'Completed') && (
                       <select
                         className="add-user-select"
                         value=""
@@ -667,7 +760,7 @@ export function FieldVisitModal({
                           ))}
                       </select>
                     )}
-                    {(isReadOnly || formData.status !== 'Visited') && formData.visitedBy.length === 0 && (
+                    {(isReadOnly || (formData.status !== 'Visited' && formData.status !== 'Completed')) && formData.visitedBy.length === 0 && (
                       <span className="empty-placeholder">-</span>
                     )}
                   </div>
@@ -704,7 +797,7 @@ export function FieldVisitModal({
                   name="assignedTo"
                   value={isReadOnly && visit ? visit.assignedTo : formData.assignedTo}
                   onChange={handleChange}
-                  disabled={isReadOnly || !formData.quotationRequested || (mode === 'edit' && wasQuotationRequested)}
+                  disabled={isReadOnly || !formData.quotationRequested}
                   required={formData.quotationRequested}
                 >
                   <option value="">Select User</option>
@@ -775,563 +868,6 @@ export function FieldVisitModal({
         </form>
       </div>
 
-      <style>{`
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          padding: 20px;
-        }
-
-        .modal-content {
-          background: white;
-          border-radius: 12px;
-          max-width: 700px;
-          width: 100%;
-          max-height: 90vh;
-          display: flex;
-          flex-direction: column;
-          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-        }
-
-        .modal-header {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-          padding: 20px 24px;
-          border-bottom: 1px solid #e9ecef;
-          background: white;
-          border-radius: 12px 12px 0 0;
-          flex-shrink: 0;
-        }
-
-        .modal-header h2 {
-          margin: 0;
-          font-size: 20px;
-          color: #333;
-          flex: 1;
-        }
-
-        .visit-display-id {
-          background: #667eea;
-          color: white;
-          padding: 4px 12px;
-          border-radius: 12px;
-          font-size: 13px;
-          font-weight: 500;
-        }
-
-        .modal-close {
-          background: none;
-          border: none;
-          font-size: 28px;
-          cursor: pointer;
-          color: #666;
-          line-height: 1;
-          padding: 0;
-        }
-
-        .modal-close:hover {
-          color: #333;
-        }
-
-        .modal-error {
-          background: #fee;
-          color: #c00;
-          padding: 12px 24px;
-          border-bottom: 1px solid #fcc;
-        }
-
-        .modal-form {
-          display: flex;
-          flex-direction: column;
-          flex: 1;
-          min-height: 0;
-        }
-
-        .modal-body {
-          flex: 1;
-          overflow-y: auto;
-          padding: 24px;
-        }
-
-        .modal-footer {
-          display: flex;
-          justify-content: flex-end;
-          gap: 12px;
-          padding: 16px 24px;
-          border-top: 1px solid #e9ecef;
-          background: white;
-          border-radius: 0 0 12px 12px;
-          flex-shrink: 0;
-        }
-
-        .form-section {
-          margin-bottom: 24px;
-        }
-
-        .form-section h3 {
-          font-size: 14px;
-          font-weight: 600;
-          color: #667eea;
-          text-transform: uppercase;
-          margin: 0 0 16px 0;
-          padding-bottom: 8px;
-          border-bottom: 2px solid #e9ecef;
-        }
-
-        .form-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 16px;
-        }
-
-        .form-grid.metadata {
-          grid-template-columns: repeat(3, 1fr);
-        }
-
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-
-        .form-group.full-width {
-          grid-column: 1 / -1;
-        }
-
-        .form-group label {
-          font-size: 13px;
-          font-weight: 500;
-          color: #555;
-        }
-
-        .required {
-          color: #dc3545;
-          margin-left: 2px;
-        }
-
-        .form-group input,
-        .form-group select,
-        .form-group textarea {
-          padding: 10px 12px;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 14px;
-          transition: border-color 0.2s;
-        }
-
-        .form-group textarea {
-          resize: vertical;
-          min-height: 80px;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus,
-        .form-group textarea:focus {
-          outline: none;
-          border-color: #667eea;
-        }
-
-        .form-group input:disabled,
-        .form-group select:disabled,
-        .form-group textarea:disabled {
-          background: #f5f5f5;
-          cursor: default;
-        }
-
-        .checkbox-group {
-          flex-direction: row;
-          align-items: center;
-        }
-
-        .checkbox-label {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          cursor: pointer;
-          font-size: 14px;
-        }
-
-        .checkbox-label input[type="checkbox"] {
-          width: 18px;
-          height: 18px;
-          cursor: pointer;
-        }
-
-        .lead-info-readonly {
-          background: #f8f9fa;
-          padding: 16px;
-          border-radius: 8px;
-        }
-
-        .lead-info-row {
-          display: flex;
-          gap: 12px;
-          padding: 6px 0;
-        }
-
-        .lead-info-row .label {
-          font-weight: 500;
-          color: #666;
-          min-width: 80px;
-        }
-
-        .lead-info-row .value {
-          color: #333;
-        }
-
-        .selected-lead-info {
-          grid-column: 1 / -1;
-          background: #e8f5e9;
-          padding: 12px 16px;
-          border-radius: 6px;
-          font-size: 14px;
-        }
-
-        .selected-lead-info p {
-          margin: 4px 0;
-          color: #2e7d32;
-        }
-
-        /* Searchable Lead Dropdown Styles */
-        .lead-search-container {
-          position: relative;
-        }
-
-        .lead-search-input {
-          width: 100%;
-          padding: 10px 12px;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 14px;
-        }
-
-        .lead-search-input:focus {
-          outline: none;
-          border-color: #667eea;
-        }
-
-        .lead-dropdown {
-          position: absolute;
-          top: 100%;
-          left: 0;
-          right: 0;
-          max-height: 250px;
-          overflow-y: auto;
-          background: white;
-          border: 1px solid #ddd;
-          border-top: none;
-          border-radius: 0 0 6px 6px;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-          z-index: 100;
-        }
-
-        .lead-dropdown-loading,
-        .lead-dropdown-empty {
-          padding: 12px 16px;
-          color: #666;
-          font-size: 14px;
-          text-align: center;
-        }
-
-        .lead-dropdown-item {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-          padding: 10px 16px;
-          cursor: pointer;
-          border-bottom: 1px solid #f0f0f0;
-          transition: background 0.15s;
-        }
-
-        .lead-dropdown-item:last-child {
-          border-bottom: none;
-        }
-
-        .lead-dropdown-item:hover {
-          background: #f5f5f5;
-        }
-
-        .lead-dropdown-item.selected {
-          background: #e8f0fe;
-        }
-
-        .lead-dropdown-item .lead-display-id {
-          font-weight: 600;
-          color: #667eea;
-          font-size: 12px;
-        }
-
-        .lead-dropdown-item .lead-name {
-          font-weight: 500;
-          color: #333;
-          font-size: 14px;
-        }
-
-        .lead-dropdown-item .lead-location {
-          font-size: 12px;
-          color: #666;
-        }
-
-        .selected-lead-display {
-          padding: 10px 12px;
-          background: #f5f5f5;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 14px;
-          color: #333;
-        }
-
-        .metadata-value {
-          font-size: 14px;
-          color: #333;
-          padding: 10px 0;
-        }
-
-        /* Multi-select chips styles */
-        .multi-select-container {
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          padding: 8px 12px;
-          min-height: 42px;
-          background: white;
-        }
-
-        .multi-select-container.disabled {
-          background: #f5f5f5;
-        }
-
-        .chips-container {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          align-items: center;
-        }
-
-        .chip {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          background: #e8f0fe;
-          color: #1a73e8;
-          padding: 4px 10px;
-          border-radius: 16px;
-          font-size: 13px;
-          font-weight: 500;
-        }
-
-        .chip-remove {
-          background: none;
-          border: none;
-          color: #1a73e8;
-          font-size: 16px;
-          cursor: pointer;
-          padding: 0 2px;
-          line-height: 1;
-        }
-
-        .chip-remove:hover {
-          color: #c00;
-        }
-
-        .add-user-select {
-          background: #667eea;
-          color: white;
-          border: none;
-          padding: 4px 12px;
-          border-radius: 16px;
-          font-size: 13px;
-          cursor: pointer;
-        }
-
-        .add-user-select:hover {
-          background: #5568d3;
-        }
-
-        .add-user-select option {
-          background: white;
-          color: #333;
-        }
-
-        .empty-placeholder {
-          color: #999;
-          font-style: italic;
-          font-size: 13px;
-        }
-
-        .locked-indicator {
-          margin-left: 8px;
-          font-size: 12px;
-          color: #666;
-        }
-
-        /* File Upload Styles */
-        .file-attachment-view {
-          display: flex;
-          gap: 12px;
-        }
-
-        .file-link {
-          display: inline-block;
-          padding: 8px 16px;
-          background: #667eea;
-          color: white;
-          text-decoration: none;
-          border-radius: 6px;
-          font-size: 13px;
-          font-weight: 500;
-        }
-
-        .file-link:hover {
-          background: #5568d3;
-        }
-
-        .file-link.download {
-          background: #4caf50;
-        }
-
-        .file-link.download:hover {
-          background: #43a047;
-        }
-
-        .no-file {
-          color: #999;
-          font-style: italic;
-          font-size: 14px;
-        }
-
-        .file-upload-container {
-          margin-top: 4px;
-        }
-
-        .uploaded-file {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 10px 12px;
-          background: #e8f5e9;
-          border: 1px solid #c8e6c9;
-          border-radius: 6px;
-        }
-
-        .file-name {
-          font-size: 14px;
-          color: #2e7d32;
-          font-weight: 500;
-        }
-
-        .file-actions {
-          display: flex;
-          gap: 8px;
-          align-items: center;
-        }
-
-        .file-actions .file-link {
-          padding: 4px 12px;
-          font-size: 12px;
-        }
-
-        .btn-remove-file {
-          background: #f44336;
-          color: white;
-          border: none;
-          padding: 4px 12px;
-          border-radius: 4px;
-          font-size: 12px;
-          cursor: pointer;
-        }
-
-        .btn-remove-file:hover {
-          background: #d32f2f;
-        }
-
-        .file-input-wrapper {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .file-input-wrapper input[type="file"] {
-          font-size: 14px;
-        }
-
-        .uploading-text {
-          color: #667eea;
-          font-size: 13px;
-          font-weight: 500;
-        }
-
-        .btn-cancel {
-          background: white;
-          border: 1px solid #ddd;
-          color: #666;
-          padding: 10px 20px;
-          border-radius: 6px;
-          font-size: 14px;
-          cursor: pointer;
-        }
-
-        .btn-cancel:hover {
-          background: #f5f5f5;
-        }
-
-        .btn-save {
-          background: #667eea;
-          border: none;
-          color: white;
-          padding: 10px 24px;
-          border-radius: 6px;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-        }
-
-        .btn-save:hover:not(:disabled) {
-          background: #5568d3;
-        }
-
-        .btn-save:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        @media (max-width: 600px) {
-          .modal-overlay {
-            padding: 0;
-            align-items: flex-end;
-          }
-
-          .modal-content {
-            max-height: 95vh;
-            border-radius: 12px 12px 0 0;
-          }
-
-          .form-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .form-grid.metadata {
-            grid-template-columns: 1fr;
-          }
-
-          .modal-footer {
-            flex-direction: column;
-          }
-
-          .btn-cancel,
-          .btn-save {
-            width: 100%;
-          }
-        }
-      `}</style>
     </div>
   );
 }

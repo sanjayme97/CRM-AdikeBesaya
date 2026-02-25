@@ -30,8 +30,9 @@ import {
   searchAcceptedQuotations,
   fetchPaymentsByQuoteId,
   type DashboardStats,
-} from '../services/sheetsService';
+} from '../services/backend';
 import type { Lead, FieldVisit, Quotation, Payment, TalukWithDistrict } from '../types';
+import './DashboardPage.css';
 
 const emptyStats: DashboardStats = {
   totalRevenue: 0,
@@ -133,44 +134,59 @@ export function DashboardPage() {
     });
   };
 
-  // Click handlers for opening modals
-  const handleLeadClick = async (lead: Lead) => {
-    setSelectedLead(lead);
-    setModalType('lead');
+  // Click handlers for opening modals - fetch full objects from partial dashboard data
+  const handleLeadClick = async (partialLead: { id: string }) => {
+    const lead = await fetchLeadById(partialLead.id);
+    if (lead) {
+      setSelectedLead(lead);
+      setModalType('lead');
+    }
   };
 
-  const handleVisitClick = async (visit: FieldVisit) => {
-    setSelectedVisit(visit);
-    // Load the lead for this visit
-    const lead = await fetchLeadById(visit.leadId);
+  const handleVisitClick = async (partialVisit: { id: string; leadId: string }) => {
+    // For now, just fetch the lead - visit modal needs lead context
+    const lead = await fetchLeadById(partialVisit.leadId);
     if (lead) {
       setLeadMap(new Map([[lead.id, lead]]));
+      // Get visits for this lead to find the full visit object
+      const visits = await fetchVisitsByLeadId(partialVisit.leadId);
+      const fullVisit = visits.find(v => v.id === partialVisit.id);
+      if (fullVisit) {
+        setSelectedVisit(fullVisit);
+        setModalType('visit');
+      }
     }
-    setModalType('visit');
   };
 
-  const handleQuotationClick = async (quotation: Quotation) => {
-    setSelectedQuotation(quotation);
-    // Load the lead for this quotation
-    const lead = await fetchLeadById(quotation.leadId);
-    if (lead) {
-      setLeadMap(new Map([[lead.id, lead]]));
+  const handleQuotationClick = async (partialQuotation: { id: string; leadId: string }) => {
+    const quotation = await fetchQuotationById(partialQuotation.id);
+    if (quotation) {
+      setSelectedQuotation(quotation);
+      const lead = await fetchLeadById(partialQuotation.leadId);
+      if (lead) {
+        setLeadMap(new Map([[lead.id, lead]]));
+      }
+      setModalType('quotation');
     }
-    setModalType('quotation');
   };
 
-  const handlePaymentClick = async (payment: Payment) => {
-    setSelectedPayment(payment);
+  const handlePaymentClick = async (partialPayment: { id: string; quoteId: string }) => {
     // Load the quotation and lead for this payment
-    const quotation = await fetchQuotationById(payment.quoteId);
+    const quotation = await fetchQuotationById(partialPayment.quoteId);
     if (quotation) {
       setQuotationMap(new Map([[quotation.id, quotation]]));
       const lead = await fetchLeadById(quotation.leadId);
       if (lead) {
         setLeadMap(new Map([[lead.id, lead]]));
       }
+      // Get payments for this quotation to find the full payment
+      const payments = await fetchPaymentsByQuoteId(partialPayment.quoteId);
+      const fullPayment = payments.find(p => p.id === partialPayment.id);
+      if (fullPayment) {
+        setSelectedPayment(fullPayment);
+        setModalType('payment');
+      }
     }
-    setModalType('payment');
   };
 
   const closeModal = () => {
@@ -399,314 +415,6 @@ export function DashboardPage() {
         onSave={handleSave}
       />
 
-      <style>{`
-        .dashboard-content {
-          width: 100%;
-        }
-
-        .dashboard-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 30px;
-        }
-
-        .dashboard-header h2 {
-          font-size: 28px;
-          color: #333;
-          margin: 0;
-        }
-
-        .btn-refresh {
-          background: white;
-          border: 1px solid #667eea;
-          color: #667eea;
-          padding: 8px 16px;
-          border-radius: 6px;
-          cursor: pointer;
-          font-size: 14px;
-        }
-
-        .btn-refresh:hover:not(:disabled) {
-          background: #667eea;
-          color: white;
-        }
-
-        .btn-refresh:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .error-text {
-          color: #e53e3e;
-          padding: 12px;
-          background: #fee;
-          border-radius: 6px;
-        }
-
-        .dashboard-section {
-          margin-bottom: 30px;
-        }
-
-        .section-title {
-          font-size: 16px;
-          color: #666;
-          margin: 0 0 15px 0;
-          text-transform: uppercase;
-          font-weight: 600;
-        }
-
-        .stats-grid {
-          display: grid;
-          gap: 15px;
-        }
-
-        .four-cols {
-          grid-template-columns: repeat(4, 1fr);
-        }
-
-        .five-cols {
-          grid-template-columns: repeat(5, 1fr);
-        }
-
-        .stat-card {
-          background: white;
-          padding: 20px;
-          border-radius: 8px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-          border-left: 4px solid #e0e0e0;
-        }
-
-        .stat-card.highlight-green {
-          border-left-color: #48bb78;
-        }
-
-        .stat-card.highlight-orange {
-          border-left-color: #ed8936;
-        }
-
-        .stat-card.highlight-blue {
-          border-left-color: #667eea;
-        }
-
-        .stat-label {
-          margin: 0 0 8px 0;
-          font-size: 12px;
-          color: #666;
-          text-transform: uppercase;
-        }
-
-        .stat-value {
-          margin: 0;
-          font-size: 24px;
-          font-weight: 700;
-          color: #333;
-        }
-
-        .alerts-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 15px;
-        }
-
-        .alert-card {
-          background: white;
-          padding: 20px;
-          border-radius: 8px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-
-        .alert-card h4 {
-          margin: 0 0 15px 0;
-          font-size: 14px;
-          color: #333;
-        }
-
-        .no-alerts {
-          color: #48bb78;
-          font-size: 14px;
-          margin: 0;
-        }
-
-        .alert-list {
-          list-style: none;
-          padding: 0;
-          margin: 0;
-        }
-
-        .alert-list li {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 8px 0;
-          border-bottom: 1px solid #f0f0f0;
-          font-size: 13px;
-        }
-
-        .alert-list li:last-child {
-          border-bottom: none;
-        }
-
-        .alert-id {
-          font-weight: 600;
-          color: #667eea;
-        }
-
-        .clickable {
-          cursor: pointer;
-          text-decoration: underline;
-        }
-
-        .clickable:hover {
-          color: #5568d3;
-        }
-
-        .alert-amount {
-          color: #333;
-        }
-
-        .alert-date {
-          color: #ed8936;
-          font-size: 12px;
-        }
-
-        .activity-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 15px;
-        }
-
-        .activity-card {
-          background: white;
-          padding: 20px;
-          border-radius: 8px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-
-        .activity-card h4 {
-          margin: 0 0 15px 0;
-          font-size: 14px;
-          color: #333;
-        }
-
-        .no-data {
-          color: #666;
-          font-size: 14px;
-          margin: 0;
-        }
-
-        .activity-list {
-          list-style: none;
-          padding: 0;
-          margin: 0;
-        }
-
-        .activity-list li {
-          padding: 10px 0;
-          border-bottom: 1px solid #f0f0f0;
-        }
-
-        .activity-list li:last-child {
-          border-bottom: none;
-        }
-
-        .activity-main {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 4px;
-        }
-
-        .activity-id {
-          font-weight: 600;
-          color: #667eea;
-          font-size: 13px;
-        }
-
-        .activity-name {
-          font-size: 14px;
-          color: #333;
-        }
-
-        .activity-amount {
-          font-weight: 600;
-          color: #48bb78;
-          font-size: 14px;
-        }
-
-        .activity-meta {
-          display: flex;
-          justify-content: space-between;
-          font-size: 12px;
-          color: #666;
-        }
-
-        .status-badge {
-          padding: 2px 8px;
-          border-radius: 10px;
-          font-size: 11px;
-          font-weight: 500;
-        }
-
-        .status-badge.new {
-          background: #e3f2fd;
-          color: #1976d2;
-        }
-
-        .status-badge.active {
-          background: #d4edda;
-          color: #155724;
-        }
-
-        .status-badge.follow-up {
-          background: #fff3cd;
-          color: #856404;
-        }
-
-        .status-badge.closed {
-          background: #e2e3e5;
-          color: #6c757d;
-        }
-
-        @media (max-width: 1024px) {
-          .four-cols {
-            grid-template-columns: repeat(2, 1fr);
-          }
-
-          .five-cols {
-            grid-template-columns: repeat(3, 1fr);
-          }
-        }
-
-        @media (max-width: 768px) {
-          .dashboard-header {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 15px;
-          }
-
-          .four-cols,
-          .five-cols {
-            grid-template-columns: repeat(2, 1fr);
-          }
-
-          .alerts-grid,
-          .activity-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .stat-value {
-            font-size: 20px;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .four-cols,
-          .five-cols {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
     </Layout>
   );
 }

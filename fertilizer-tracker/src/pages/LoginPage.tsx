@@ -11,6 +11,18 @@ import { useGoogleLogin } from '@react-oauth/google';
 import type { TokenResponse } from '@react-oauth/google';
 import { useAuthStore } from '../store/authStore';
 import { verifySheetAccess, fetchUserRole } from '../services/authService';
+import './LoginPage.css';
+
+// Check which backend is being used
+const USE_SUPABASE = import.meta.env.VITE_USE_SUPABASE === 'true';
+
+// Dynamically import Supabase auth if needed
+let supabaseAuth: any = null;
+if (USE_SUPABASE) {
+  import('../services/auth/supabaseAuth').then(module => {
+    supabaseAuth = module;
+  });
+}
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -25,7 +37,8 @@ export function LoginPage() {
     }
   }, [logoutReason, clearLogoutReason]);
 
-  const login = useGoogleLogin({
+  // Google Sheets auth flow (using @react-oauth/google)
+  const loginWithSheets = useGoogleLogin({
     onSuccess: async (tokenResponse: TokenResponse) => {
       setLoading(true);
       setError(null);
@@ -95,6 +108,42 @@ export function LoginPage() {
     scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
   });
 
+  // Supabase auth flow (redirect-based OAuth)
+  const loginWithSupabase = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      if (!supabaseAuth) {
+        throw new Error('Supabase auth module not loaded');
+      }
+
+      // Initiate OAuth redirect
+      const redirectUrl = await supabaseAuth.initiateGoogleLogin();
+
+      // Redirect to Google OAuth
+      window.location.href = redirectUrl;
+
+    } catch (err) {
+      console.error('Supabase login error:', err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'An error occurred during login. Please try again.'
+      );
+      setLoading(false);
+    }
+  };
+
+  // Unified login handler
+  const handleLogin = () => {
+    if (USE_SUPABASE) {
+      loginWithSupabase();
+    } else {
+      loginWithSheets();
+    }
+  };
+
   return (
     <div className="login-page">
       <div className="login-container">
@@ -115,7 +164,7 @@ export function LoginPage() {
                 <p>Signing you in...</p>
               </div>
             ) : (
-              <button onClick={() => login()} className="google-signin-btn">
+              <button onClick={handleLogin} className="google-signin-btn">
                 <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
                   <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
                   <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
@@ -143,205 +192,6 @@ export function LoginPage() {
         </div>
       </div>
 
-      <style>{`
-        .login-page {
-          min-height: 100vh;
-          min-height: 100dvh; /* Dynamic viewport height for mobile browsers */
-          width: 100%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          padding: 20px;
-          box-sizing: border-box;
-        }
-
-        .login-container {
-          background: white;
-          border-radius: 12px;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-          max-width: 450px;
-          width: 100%;
-          padding: 40px;
-        }
-
-        .login-header {
-          text-align: center;
-          margin-bottom: 40px;
-        }
-
-        .login-logo {
-          width: 80px;
-          height: 80px;
-          object-fit: contain;
-          border-radius: 12px;
-          margin-bottom: 15px;
-        }
-
-        .login-header h1 {
-          font-size: 28px;
-          margin: 0 0 10px 0;
-          color: #333;
-        }
-
-        .login-header p {
-          font-size: 16px;
-          color: #666;
-          margin: 0;
-        }
-
-        .login-content {
-          text-align: center;
-          margin-bottom: 30px;
-        }
-
-        .login-content h2 {
-          font-size: 24px;
-          margin: 0 0 10px 0;
-          color: #333;
-        }
-
-        .login-content > p {
-          font-size: 14px;
-          color: #666;
-          margin: 0 0 30px 0;
-        }
-
-        .login-button {
-          display: flex;
-          justify-content: center;
-          margin-bottom: 20px;
-        }
-
-        .google-signin-btn {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          background: white;
-          color: #3c4043;
-          border: 1px solid #dadce0;
-          border-radius: 4px;
-          padding: 12px 24px;
-          font-size: 14px;
-          font-weight: 500;
-          font-family: 'Roboto', arial, sans-serif;
-          cursor: pointer;
-          transition: all 0.2s;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-        }
-
-        .google-signin-btn:hover {
-          background: #f8f9fa;
-          border-color: #c6c6c6;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-        }
-
-        .google-signin-btn:active {
-          background: #f1f3f4;
-        }
-
-        .login-loading {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 12px;
-          padding: 20px;
-        }
-
-        .login-loading p {
-          margin: 0;
-          color: #666;
-          font-size: 14px;
-        }
-
-        .login-spinner {
-          width: 40px;
-          height: 40px;
-          border: 3px solid #f0f0f0;
-          border-top: 3px solid #667eea;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-
-        .error-message {
-          background: #fee;
-          border: 1px solid #fcc;
-          border-radius: 6px;
-          padding: 12px;
-          margin-top: 20px;
-        }
-
-        .error-message p {
-          color: #c33;
-          margin: 0;
-          font-size: 14px;
-        }
-
-        .login-footer {
-          text-align: center;
-          padding-top: 20px;
-          border-top: 1px solid #eee;
-        }
-
-        .login-footer p {
-          font-size: 12px;
-          color: #999;
-          margin: 0;
-          line-height: 1.5;
-        }
-
-        @media (max-width: 480px) {
-          .login-page {
-            padding: 16px;
-          }
-
-          .login-container {
-            padding: 24px 20px;
-          }
-
-          .login-header {
-            margin-bottom: 24px;
-          }
-
-          .login-logo {
-            width: 70px;
-            height: 70px;
-          }
-
-          .login-header h1 {
-            font-size: 24px;
-          }
-
-          .login-header p {
-            font-size: 14px;
-          }
-
-          .login-content {
-            margin-bottom: 20px;
-          }
-
-          .login-content h2 {
-            font-size: 20px;
-          }
-
-          .login-content > p {
-            margin-bottom: 20px;
-          }
-
-          .login-footer {
-            padding-top: 16px;
-          }
-
-          .login-footer p {
-            font-size: 11px;
-          }
-        }
-      `}</style>
     </div>
   );
 }

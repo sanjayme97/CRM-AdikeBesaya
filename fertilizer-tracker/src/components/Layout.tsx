@@ -9,26 +9,31 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useModalStore } from '../store/modalStore';
-import { useRef, useEffect, useCallback, type ReactNode } from 'react';
+import { useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react';
+import { getAccessibleNavItems, type UserRole} from '../config/roles';
+import { AskDatabase } from './AskDatabase';
+import './Layout.css';
 
 interface LayoutProps {
   children: ReactNode;
 }
-
-// Navigation tabs in order
-const NAV_TABS = [
-  '/dashboard',
-  '/leads',
-  '/visits',
-  '/quotations',
-  '/payments',
-];
 
 export function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuthStore();
   const isModalOpen = useModalStore((state) => state.isModalOpen);
+
+  // Get accessible navigation items based on user's role
+  const accessibleNavItems = useMemo(() => {
+    if (!user) return [];
+    return getAccessibleNavItems(user.role as UserRole);
+  }, [user]);
+
+  // Get accessible tabs for swipe navigation
+  const accessibleTabs = useMemo(() => {
+    return accessibleNavItems.map(item => item.path);
+  }, [accessibleNavItems]);
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -39,10 +44,10 @@ export function Layout({ children }: LayoutProps) {
   const touchEndY = useRef<number>(0);
   const mainContentRef = useRef<HTMLElement>(null);
 
-  // Get current tab index
+  // Get current tab index (from accessible tabs only)
   const getCurrentTabIndex = useCallback(() => {
-    return NAV_TABS.findIndex(tab => location.pathname === tab);
-  }, [location.pathname]);
+    return accessibleTabs.findIndex(tab => location.pathname === tab);
+  }, [location.pathname, accessibleTabs]);
 
   // Handle swipe navigation
   const handleSwipe = useCallback(() => {
@@ -60,14 +65,14 @@ export function Layout({ children }: LayoutProps) {
     const currentIndex = getCurrentTabIndex();
     if (currentIndex === -1) return;
 
-    if (diffX > 0 && currentIndex < NAV_TABS.length - 1) {
+    if (diffX > 0 && currentIndex < accessibleTabs.length - 1) {
       // Swipe left - go to next tab
-      navigate(NAV_TABS[currentIndex + 1]);
+      navigate(accessibleTabs[currentIndex + 1]);
     } else if (diffX < 0 && currentIndex > 0) {
       // Swipe right - go to previous tab
-      navigate(NAV_TABS[currentIndex - 1]);
+      navigate(accessibleTabs[currentIndex - 1]);
     }
-  }, [getCurrentTabIndex, navigate, isModalOpen]);
+  }, [getCurrentTabIndex, navigate, isModalOpen, accessibleTabs]);
 
   // Touch event handlers
   useEffect(() => {
@@ -103,36 +108,15 @@ export function Layout({ children }: LayoutProps) {
             <span>Adike Besaya</span>
           </div>
           <nav className="nav-tabs">
-            <Link
-              to="/dashboard"
-              className={`nav-tab ${isActive('/dashboard') ? 'active' : ''}`}
-            >
-              Dashboard
-            </Link>
-            <Link
-              to="/leads"
-              className={`nav-tab ${isActive('/leads') ? 'active' : ''}`}
-            >
-              Leads
-            </Link>
-            <Link
-              to="/visits"
-              className={`nav-tab ${isActive('/visits') ? 'active' : ''}`}
-            >
-              Visits
-            </Link>
-            <Link
-              to="/quotations"
-              className={`nav-tab ${isActive('/quotations') ? 'active' : ''}`}
-            >
-              Quotations
-            </Link>
-            <Link
-              to="/payments"
-              className={`nav-tab ${isActive('/payments') ? 'active' : ''}`}
-            >
-              Payments
-            </Link>
+            {accessibleNavItems.map((item) => (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`nav-tab ${isActive(item.path) ? 'active' : ''}`}
+              >
+                {item.label}
+              </Link>
+            ))}
           </nav>
         </div>
 
@@ -157,230 +141,7 @@ export function Layout({ children }: LayoutProps) {
         </footer>
       </main>
 
-      <style>{`
-        .layout {
-          height: 100vh;
-          display: flex;
-          flex-direction: column;
-          background: #f5f5f5;
-          overflow: hidden;
-        }
-
-        .header {
-          flex-shrink: 0;
-          z-index: 100;
-          background: white;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 0 40px;
-          height: 70px;
-        }
-
-        .header-left {
-          display: flex;
-          align-items: center;
-          gap: 30px;
-        }
-
-        .logo {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          font-size: 18px;
-          font-weight: 600;
-          color: #333;
-        }
-
-        .logo-img {
-          width: 40px;
-          height: 40px;
-          object-fit: contain;
-          border-radius: 6px;
-        }
-
-        .nav-tabs {
-          display: flex;
-          gap: 5px;
-        }
-
-        .nav-tab {
-          padding: 10px 20px;
-          text-decoration: none;
-          color: #666;
-          font-weight: 500;
-          font-size: 14px;
-          border-radius: 6px;
-          transition: all 0.2s;
-        }
-
-        .nav-tab:hover {
-          background: #f0f0f0;
-          color: #333;
-        }
-
-        .nav-tab.active {
-          background: #667eea;
-          color: white;
-        }
-
-        .header-right {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-        }
-
-        .user-avatar {
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-        }
-
-        .user-info {
-          text-align: right;
-        }
-
-        .user-name {
-          margin: 0;
-          font-size: 14px;
-          font-weight: 600;
-          color: #333;
-        }
-
-        .user-role {
-          margin: 0;
-          font-size: 12px;
-          color: #666;
-        }
-
-        .sign-out-btn {
-          background: #667eea;
-          color: white;
-          border: none;
-          padding: 8px 16px;
-          border-radius: 6px;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 500;
-        }
-
-        .sign-out-btn:hover {
-          background: #5568d3;
-        }
-
-        .main-content {
-          flex: 1;
-          padding: 30px 40px;
-          width: 100%;
-          max-width: 100%;
-          box-sizing: border-box;
-          overflow-y: auto;
-        }
-
-        .app-footer {
-          text-align: center;
-          padding: 20px;
-          margin-top: 40px;
-          font-size: 12px;
-          color: #999;
-        }
-
-        .app-footer .brand-name {
-          color: #667eea;
-          font-weight: 500;
-        }
-
-        @media (max-width: 768px) {
-          .layout {
-            padding-bottom: 65px; /* Space for bottom nav */
-          }
-
-          .header {
-            flex-direction: row;
-            height: 60px;
-            padding: 0 15px;
-            gap: 10px;
-          }
-
-          .header-left {
-            flex: 1;
-          }
-
-          .logo span {
-            display: inline; /* Show text on mobile */
-            font-size: 16px;
-          }
-
-          .logo-img {
-            width: 36px;
-            height: 36px;
-          }
-
-          /* Hide nav tabs in header on mobile */
-          .nav-tabs {
-            display: none;
-          }
-
-          .header-right {
-            gap: 10px;
-          }
-
-          .user-info {
-            display: none; /* Hide user info on mobile */
-          }
-
-          .user-avatar {
-            width: 32px;
-            height: 32px;
-          }
-
-          .sign-out-btn {
-            padding: 6px 12px;
-            font-size: 12px;
-          }
-
-          .main-content {
-            padding: 15px;
-            padding-bottom: 80px; /* Extra space for bottom nav */
-          }
-        }
-
-        /* Mobile Bottom Navigation */
-        @media (max-width: 768px) {
-          .nav-tabs {
-            display: flex !important;
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: white;
-            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
-            padding: 8px 5px;
-            justify-content: space-around;
-            z-index: 1000;
-            gap: 2px;
-          }
-
-          .nav-tab {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 8px 4px;
-            font-size: 11px;
-            border-radius: 8px;
-            text-align: center;
-            min-width: 0;
-          }
-
-          .nav-tab.active {
-            background: #667eea;
-            color: white;
-          }
-        }
-      `}</style>
+      <AskDatabase />
     </div>
   );
 }

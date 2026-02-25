@@ -160,6 +160,7 @@ function parseLeadRow(row: string[]): Lead {
     rowNumber: parseInt(row[1]) || 0,
     displayId: row[2] || '',
     createdDate: row[3] || '',
+    createdBy: row[16] || '', // Default to leadOwner for legacy Google Sheets data
     farmerName: row[4] || '',
     phone: row[5] || '',
     whatsapp: row[6] || '',

@@ -9,8 +9,13 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { Quotation, Lead, FieldVisit } from '../types';
+import type { Quotation, Lead, FieldVisit, Product, LineItemRow } from '../types';
+import { CROP_PROBLEMS } from '../types';
 import { uploadFile, getDownloadLink } from '../services/driveService';
+import { fetchProducts } from '../services/supabase/products';
+import { fetchLineItemsByQuotationId, saveLineItemsForQuotation } from '../services/supabase/lineItems';
+import { numberToWords } from '../utils/numberToWords';
+import './QuotationModal.css';
 
 interface QuotationModalProps {
   isOpen: boolean;
@@ -25,7 +30,7 @@ interface QuotationModalProps {
     deliveryStatuses: string[];
   };
   onClose: () => void;
-  onSave: (quotationData: Partial<Quotation>) => Promise<void>;
+  onSave: (quotationData: Partial<Quotation>) => Promise<string | void>;
 }
 
 const initialFormData = {
@@ -37,6 +42,7 @@ const initialFormData = {
   validUntil: '',
   status: 'Draft',
   notes: '',
+  usageInstructions: '',
   attachmentFileId: '',
   deliveryStatus: '',
   deliveryDate: '',
@@ -57,6 +63,7 @@ export function QuotationModal({
   const [formData, setFormData] = useState(initialFormData);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [generatingPDF, setGeneratingPDF] = useState(false);
 
   // Searchable lead dropdown state
   const [leadSearchTerm, setLeadSearchTerm] = useState('');
@@ -74,6 +81,12 @@ export function QuotationModal({
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Line items state
+  const [lineItems, setLineItems] = useState<LineItemRow[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [loadingLineItems, setLoadingLineItems] = useState(false);
 
   // Get selected lead info from leadMap or leadOptions
   const selectedLead = leadMap.get(formData.leadId) || leadOptions.find((l: Lead) => l.id === formData.leadId);
@@ -115,9 +128,10 @@ export function QuotationModal({
     }
   }, [onSearchLeads]);
 
-  // Populate form when editing or reset when adding
+  // Populate form when editing/viewing or reset when adding
   useEffect(() => {
-    if (mode === 'edit' && quotation) {
+    if (!isOpen) return;
+    if ((mode === 'edit' || mode === 'view') && quotation) {
       setFormData({
         leadId: quotation.leadId || '',
         visitId: quotation.visitId || '',
@@ -127,12 +141,13 @@ export function QuotationModal({
         validUntil: quotation.validUntil ? quotation.validUntil.split('T')[0] : '',
         status: quotation.status || 'Draft',
         notes: quotation.notes || '',
+        usageInstructions: quotation.usageInstructions || '',
         attachmentFileId: quotation.attachmentFileId || '',
         deliveryStatus: quotation.deliveryStatus || '',
         deliveryDate: quotation.deliveryDate ? quotation.deliveryDate.split('T')[0] : '',
       });
       setUploadedFileName(quotation.attachmentFileId ? 'Existing file' : null);
-      // Load visits for this lead
+      // Load visits for this lead (needed for selectedVisit in PDF)
       if (quotation.leadId) {
         loadVisitsForLead(quotation.leadId);
       }
@@ -151,7 +166,85 @@ export function QuotationModal({
       // Load initial lead options when opening add modal
       loadInitialLeads();
     }
-  }, [mode, quotation, loadVisitsForLead, loadInitialLeads]);
+  }, [isOpen, mode, quotation, loadVisitsForLead, loadInitialLeads]);
+
+  // Load products and line items when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Load products for dropdown (add/edit) and for print view (view mode needs categories)
+    setLoadingProducts(true);
+    fetchProducts(mode === 'view' ? false : true)
+      .then((prods) => setProducts(prods))
+      .catch((err) => console.error('Failed to load products:', err))
+      .finally(() => setLoadingProducts(false));
+
+    // Load existing line items (edit/view mode)
+    if ((mode === 'edit' || mode === 'view') && quotation) {
+      setLoadingLineItems(true);
+      fetchLineItemsByQuotationId(quotation.id)
+        .then((items) =>
+          setLineItems(
+            items.map((item) => ({
+              id: item.id,
+              productId: item.productId,
+              productName: item.productName,
+              unitPrice: item.unitPrice,
+              quantity: item.quantity,
+              notes: item.notes || '',
+              displayOrder: item.displayOrder,
+            }))
+          )
+        )
+        .catch((err) => console.error('Failed to load line items:', err))
+        .finally(() => setLoadingLineItems(false));
+    } else {
+      setLineItems([]);
+    }
+  }, [isOpen, mode, quotation]);
+
+  // Line item handlers
+  const handleAddLineItem = () => {
+    setLineItems((prev) => [
+      ...prev,
+      {
+        productId: '',
+        productName: '',
+        unitPrice: 0,
+        quantity: 1,
+        notes: '',
+        displayOrder: prev.length,
+      },
+    ]);
+  };
+
+  const handleRemoveLineItem = (index: number) => {
+    setLineItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleLineItemChange = (index: number, field: string, value: any) => {
+    setLineItems((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+
+      // When product changes, auto-fill name and price
+      if (field === 'productId') {
+        const product = products.find((p) => p.id === value);
+        if (product) {
+          updated[index].productName = product.name;
+          updated[index].unitPrice = product.unitPrice;
+        }
+      }
+
+      return updated;
+    });
+  };
+
+  // Computed total from line items
+  const lineItemsTotal = lineItems.reduce(
+    (sum, item) => sum + item.unitPrice * item.quantity,
+    0
+  );
 
   // Search leads with debounce
   const handleLeadSearch = useCallback((term: string) => {
@@ -249,10 +342,25 @@ export function QuotationModal({
       setError('Quote date is required');
       return;
     }
-    if (!formData.quoteAmount || formData.quoteAmount <= 0) {
-      setError('Quote amount must be greater than 0');
+
+    // Amount validation: either line items or manual amount
+    const hasLineItems = lineItems.length > 0;
+    if (!hasLineItems && (!formData.quoteAmount || formData.quoteAmount <= 0)) {
+      setError('Quote amount must be greater than 0 (or add line items)');
       return;
     }
+
+    // Validate line items if any exist
+    if (hasLineItems) {
+      const invalidItems = lineItems.filter(
+        (item) => !item.productId || item.quantity <= 0 || item.unitPrice <= 0
+      );
+      if (invalidItems.length > 0) {
+        setError('All line items must have a product selected with valid quantity and price');
+        return;
+      }
+    }
+
     if (!formData.status) {
       setError('Status is required');
       return;
@@ -260,7 +368,33 @@ export function QuotationModal({
 
     setSaving(true);
     try {
-      await onSave(formData);
+      // If line items exist, override quoteAmount with computed total
+      const saveData = { ...formData };
+      if (hasLineItems) {
+        saveData.quoteAmount = lineItemsTotal;
+      }
+
+      const quotationId = await onSave(saveData);
+
+      // Save line items if we have a quotation ID
+      const resolvedId = quotationId || quotation?.id;
+      if (resolvedId && hasLineItems) {
+        await saveLineItemsForQuotation(
+          resolvedId,
+          lineItems.map((item, idx) => ({
+            productId: item.productId,
+            productName: item.productName,
+            unitPrice: item.unitPrice,
+            quantity: item.quantity,
+            notes: item.notes || undefined,
+            displayOrder: idx,
+          }))
+        );
+      } else if (resolvedId && !hasLineItems && mode === 'edit') {
+        // If editing and all line items were removed, clear them in DB
+        await saveLineItemsForQuotation(resolvedId, []);
+      }
+
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save quotation');
@@ -301,6 +435,33 @@ export function QuotationModal({
     }
   };
 
+  const handleGeneratePDF = async () => {
+    if (!quotation) return;
+    setGeneratingPDF(true);
+    try {
+      const { pdf } = await import('@react-pdf/renderer');
+      const { QuotationPDF } = await import('./QuotationPDF');
+
+      const blob = await pdf(
+        QuotationPDF({
+          quotation,
+          lead: viewLead || null,
+          visit: selectedVisit || null,
+          lineItems,
+          products,
+        })
+      ).toBlob();
+
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (err) {
+      console.error('PDF generation failed, falling back to browser print:', err);
+      window.print();
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -309,7 +470,18 @@ export function QuotationModal({
           {quotation && mode !== 'add' && (
             <span className="quotation-display-id">{quotation.displayId}</span>
           )}
-          <button className="modal-close" onClick={onClose}>
+          {isReadOnly && (
+            <button
+              type="button"
+              className="btn-print no-print"
+              onClick={handleGeneratePDF}
+              disabled={generatingPDF}
+              title="Generate PDF"
+            >
+              {generatingPDF ? 'Generating...' : 'Print'}
+            </button>
+          )}
+          <button className="modal-close no-print" onClick={onClose}>
             &times;
           </button>
         </div>
@@ -458,6 +630,116 @@ export function QuotationModal({
             )}
           </div>
 
+          {/* Line Items Section */}
+          <div className="form-section">
+            <h3>Line Items {lineItems.length > 0 && `(${lineItems.length})`}</h3>
+            {loadingLineItems ? (
+              <div style={{ padding: '12px', color: '#888' }}>Loading line items...</div>
+            ) : isReadOnly ? (
+              // View mode: read-only table
+              lineItems.length > 0 ? (
+                <div className="line-items-table-wrapper">
+                  <table className="line-items-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Product</th>
+                        <th className="num-col">Qty</th>
+                        <th className="num-col">Unit Price</th>
+                        <th className="num-col">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lineItems.map((item, idx) => (
+                        <tr key={idx}>
+                          <td>{idx + 1}</td>
+                          <td>{item.productName}</td>
+                          <td className="num-col">{item.quantity}</td>
+                          <td className="num-col">{formatCurrency(item.unitPrice)}</td>
+                          <td className="num-col">{formatCurrency(item.unitPrice * item.quantity)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={4} className="total-label">Total</td>
+                        <td className="num-col total-value">{formatCurrency(lineItemsTotal)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ padding: '8px 0', color: '#888', fontSize: '14px' }}>No line items — manual amount</div>
+              )
+            ) : (
+              // Add/Edit mode: editable rows
+              <div className="line-items-editor">
+                {loadingProducts && <div style={{ padding: '8px 0', color: '#888', fontSize: '13px' }}>Loading products...</div>}
+                {lineItems.map((item, idx) => (
+                  <div key={idx} className="line-item-row">
+                    <div className="line-item-fields">
+                      <div className="li-field li-product">
+                        <label>Product</label>
+                        <select
+                          value={item.productId}
+                          onChange={(e) => handleLineItemChange(idx, 'productId', e.target.value)}
+                        >
+                          <option value="">-- Select Product --</option>
+                          {products.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({p.unit})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="li-field li-qty">
+                        <label>Qty</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.quantity || ''}
+                          onChange={(e) => handleLineItemChange(idx, 'quantity', parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="li-field li-price">
+                        <label>Unit Price</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={item.unitPrice || ''}
+                          onChange={(e) => handleLineItemChange(idx, 'unitPrice', parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="li-field li-subtotal">
+                        <label>Subtotal</label>
+                        <div className="li-subtotal-value">{formatCurrency(item.unitPrice * item.quantity)}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-remove-line-item"
+                        onClick={() => handleRemoveLineItem(idx)}
+                        title="Remove"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <button type="button" className="btn-add-line-item" onClick={handleAddLineItem}>
+                  + Add Product
+                </button>
+                {lineItems.length > 0 && (
+                  <div className="line-items-total">
+                    <span>Total:</span>
+                    <span className="total-value">{formatCurrency(lineItemsTotal)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Quotation Details Section */}
           <div className="form-section">
             <h3>Quotation Details</h3>
@@ -480,6 +762,11 @@ export function QuotationModal({
                 <label htmlFor="quoteAmount">Amount (INR) *</label>
                 {isReadOnly && quotation ? (
                   <div className="amount-display">{formatCurrency(quotation.quoteAmount)}</div>
+                ) : lineItems.length > 0 ? (
+                  <div className="amount-display computed">
+                    {formatCurrency(lineItemsTotal)}
+                    <span className="computed-hint">Auto-calculated from line items</span>
+                  </div>
                 ) : (
                   <input
                     type="number"
@@ -588,6 +875,19 @@ export function QuotationModal({
                 />
               </div>
 
+              <div className="form-group full-width">
+                <label htmlFor="usageInstructions">How to Use / Usage Instructions</label>
+                <textarea
+                  id="usageInstructions"
+                  name="usageInstructions"
+                  value={isReadOnly && quotation ? (quotation.usageInstructions || '') : formData.usageInstructions}
+                  onChange={handleChange}
+                  disabled={isReadOnly}
+                  rows={5}
+                  placeholder="Enter day-by-day product application schedule..."
+                />
+              </div>
+
               {/* File Attachment */}
               <div className="form-group full-width">
                 <label>Quotation Document</label>
@@ -680,483 +980,191 @@ export function QuotationModal({
             )}
           </div>
         </form>
+
+        {/* Print-only quotation document */}
+        {isReadOnly && quotation && (
+          <div className="print-only quotation-print">
+            <img src="/quotation-header.jpg" alt="Company Header" className="print-header-img" />
+
+            <div className="print-doc-info">
+              <div className="print-doc-row">
+                <span>Q Number: <strong>{quotation.displayId}</strong></span>
+                <span>Date: <strong>{formatDate(quotation.quoteDate)}</strong></span>
+              </div>
+              <div className="print-doc-row">
+                <span>&nbsp;</span>
+                <span>Evaluation</span>
+              </div>
+            </div>
+
+            {viewLead && (
+              <div className="print-customer-info">
+                <p>By the name of: <strong>{viewLead.farmerName}</strong></p>
+                <p>Location: <strong>
+                  {[viewLead.village, viewLead.taluk, viewLead.district].filter(Boolean).join(', ')}
+                </strong></p>
+                <p>Contact: <strong>{viewLead.phone}</strong></p>
+                <p>Subject: Comprehensive crop care; Solutions for identified diseases and deficiencies.</p>
+              </div>
+            )}
+
+            {/* Identified Problems from linked visit */}
+            {selectedVisit && selectedVisit.identifiedProblems && selectedVisit.identifiedProblems.length > 0 && (
+              <div className="print-problems-section">
+                <p>Dear Sir,</p>
+                <p>
+                  Upon our visit to your arecanut plantation, we have identified the following issues:{' '}
+                  {selectedVisit.identifiedProblems.map((key, idx) => {
+                    const prob = CROP_PROBLEMS.find((p) => p.en === key);
+                    const label = prob ? `${prob.en} (${prob.kn})` : key;
+                    return (
+                      <span key={key}>
+                        {label}
+                        {idx < selectedVisit.identifiedProblems!.length - 1 ? ', ' : '.'}
+                      </span>
+                    );
+                  })}
+                </p>
+                <p>We recommend the following treatment plan for your crops.</p>
+              </div>
+            )}
+
+            {/* Crop info */}
+            {viewLead && (
+              <div className="print-crop-info">
+                <p>
+                  <strong>Quotation details:</strong> As follows
+                </p>
+                <p>
+                  {viewLead.cropType}
+                  {viewLead.numPlants ? ` \u2013 ${viewLead.numPlants} Plants` : ''}
+                  {viewLead.cropAge ? `, ${viewLead.cropAge}` : ''}
+                  {viewLead.farmSizeAcres ? ` (${viewLead.farmSizeAcres} acres)` : ''}
+                </p>
+              </div>
+            )}
+
+            {/* Materials required - descriptive list */}
+            {lineItems.length > 0 && (() => {
+              const grouped = new Map<string, LineItemRow[]>();
+              lineItems.forEach((item) => {
+                const product = products.find((p) => p.id === item.productId);
+                const category = product?.category || 'General';
+                if (!grouped.has(category)) grouped.set(category, []);
+                grouped.get(category)!.push(item);
+              });
+
+              return (
+                <div className="print-materials-section">
+                  <p><strong>Materials required;</strong></p>
+                  {Array.from(grouped.entries()).map(([category, items]) => (
+                    <div key={category}>
+                      <p><strong>{category} Materials;</strong></p>
+                      <ul className="print-materials-list">
+                        {items.map((item, idx) => {
+                          const product = products.find((p) => p.id === item.productId);
+                          return (
+                            <li key={idx}>
+                              {item.productName}
+                              {product?.dosage ? ` - ${product.dosage}` : ''}
+                              {` = ${item.quantity}`}
+                              {product?.description ? ` (${product.description})` : ''}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Line items grouped by category - pricing table */}
+            {lineItems.length > 0 && (() => {
+              const grouped = new Map<string, LineItemRow[]>();
+              lineItems.forEach((item) => {
+                const product = products.find((p) => p.id === item.productId);
+                const category = product?.category || 'General';
+                if (!grouped.has(category)) grouped.set(category, []);
+                grouped.get(category)!.push(item);
+              });
+
+              let slNo = 1;
+              return Array.from(grouped.entries()).map(([category, items]) => {
+                const categoryTotal = items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+                return (
+                  <div key={category} className="print-category-section">
+                    <h4 className="print-category-title">{category}</h4>
+                    <table className="print-items-table">
+                      <thead>
+                        <tr>
+                          <th>Sl</th>
+                          <th>Particular</th>
+                          <th>Packing</th>
+                          <th className="num-col">Qty</th>
+                          <th className="num-col">Rate</th>
+                          <th className="num-col">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map((item) => {
+                          const product = products.find((p) => p.id === item.productId);
+                          return (
+                            <tr key={slNo}>
+                              <td>{slNo++}</td>
+                              <td>{item.productName}</td>
+                              <td>{product?.unit || ''}</td>
+                              <td className="num-col">{item.quantity}</td>
+                              <td className="num-col">{formatCurrency(item.unitPrice)}</td>
+                              <td className="num-col">{formatCurrency(item.unitPrice * item.quantity)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <td colSpan={5} style={{ textAlign: 'right', fontWeight: 600 }}>Total</td>
+                          <td className="num-col" style={{ fontWeight: 600 }}>{formatCurrency(categoryTotal)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                );
+              });
+            })()}
+
+            {/* Grand total */}
+            <div className="print-grand-total">
+              <p><strong>Total Amount: {formatCurrency(quotation.quoteAmount)}/-</strong></p>
+              <p className="amount-words">{numberToWords(quotation.quoteAmount)}</p>
+              {viewLead?.numPlants && viewLead.numPlants > 0 && (
+                <p className="cost-per-plant">
+                  Cost per plant: {formatCurrency(Math.round(quotation.quoteAmount / viewLead.numPlants))}
+                </p>
+              )}
+            </div>
+
+            {/* Notes */}
+            {quotation.notes && (
+              <div className="print-notes-section">
+                <p><strong>Note:</strong></p>
+                <p style={{ whiteSpace: 'pre-wrap' }}>{quotation.notes}</p>
+              </div>
+            )}
+
+            {/* Usage Instructions */}
+            {quotation.usageInstructions && (
+              <div className="print-usage-section">
+                <p><strong>How to Use;</strong></p>
+                <p style={{ whiteSpace: 'pre-wrap' }}>{quotation.usageInstructions}</p>
+              </div>
+            )}
+
+            <img src="/quotation-footer.jpg" alt="Company Footer" className="print-footer-img" />
+          </div>
+        )}
       </div>
 
-      <style>{`
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          padding: 20px;
-        }
-
-        .modal-content {
-          background: white;
-          border-radius: 12px;
-          max-width: 700px;
-          width: 100%;
-          max-height: 90vh;
-          display: flex;
-          flex-direction: column;
-          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-        }
-
-        .modal-header {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-          padding: 20px 24px;
-          border-bottom: 1px solid #e9ecef;
-          background: white;
-          border-radius: 12px 12px 0 0;
-          flex-shrink: 0;
-        }
-
-        .modal-header h2 {
-          margin: 0;
-          font-size: 20px;
-          color: #333;
-          flex: 1;
-        }
-
-        .quotation-display-id {
-          background: #667eea;
-          color: white;
-          padding: 4px 12px;
-          border-radius: 12px;
-          font-size: 13px;
-          font-weight: 500;
-        }
-
-        .modal-close {
-          background: none;
-          border: none;
-          font-size: 28px;
-          cursor: pointer;
-          color: #666;
-          line-height: 1;
-          padding: 0;
-        }
-
-        .modal-close:hover {
-          color: #333;
-        }
-
-        .modal-error {
-          background: #fee;
-          color: #c00;
-          padding: 12px 24px;
-          border-bottom: 1px solid #fcc;
-        }
-
-        .modal-form {
-          display: flex;
-          flex-direction: column;
-          flex: 1;
-          min-height: 0;
-        }
-
-        .modal-body {
-          flex: 1;
-          overflow-y: auto;
-          padding: 24px;
-        }
-
-        .modal-footer {
-          display: flex;
-          justify-content: flex-end;
-          gap: 12px;
-          padding: 16px 24px;
-          border-top: 1px solid #e9ecef;
-          background: white;
-          border-radius: 0 0 12px 12px;
-          flex-shrink: 0;
-        }
-
-        .form-section {
-          margin-bottom: 24px;
-        }
-
-        .form-section h3 {
-          font-size: 14px;
-          font-weight: 600;
-          color: #667eea;
-          text-transform: uppercase;
-          margin: 0 0 16px 0;
-          padding-bottom: 8px;
-          border-bottom: 2px solid #e9ecef;
-        }
-
-        .form-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 16px;
-        }
-
-        .form-grid.metadata {
-          grid-template-columns: repeat(2, 1fr);
-        }
-
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-
-        .form-group.full-width {
-          grid-column: 1 / -1;
-        }
-
-        .form-group label {
-          font-size: 13px;
-          font-weight: 500;
-          color: #555;
-        }
-
-        .form-group input,
-        .form-group select,
-        .form-group textarea {
-          padding: 10px 12px;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 14px;
-          transition: border-color 0.2s;
-        }
-
-        .form-group textarea {
-          resize: vertical;
-          min-height: 80px;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus,
-        .form-group textarea:focus {
-          outline: none;
-          border-color: #667eea;
-        }
-
-        .form-group input:disabled,
-        .form-group select:disabled,
-        .form-group textarea:disabled {
-          background: #f5f5f5;
-          cursor: default;
-        }
-
-        .lead-info-readonly {
-          background: #f8f9fa;
-          padding: 16px;
-          border-radius: 8px;
-        }
-
-        .lead-info-row {
-          display: flex;
-          gap: 12px;
-          padding: 6px 0;
-        }
-
-        .lead-info-row .label {
-          font-weight: 500;
-          color: #666;
-          min-width: 80px;
-        }
-
-        .lead-info-row .value {
-          color: #333;
-        }
-
-        .selected-lead-info {
-          grid-column: 1 / -1;
-          background: #e8f5e9;
-          padding: 12px 16px;
-          border-radius: 6px;
-          font-size: 14px;
-        }
-
-        .selected-lead-info p {
-          margin: 4px 0;
-          color: #2e7d32;
-        }
-
-        .visit-info-hint {
-          margin-top: 8px;
-          font-size: 12px;
-          color: #666;
-          background: #f5f5f5;
-          padding: 8px 12px;
-          border-radius: 4px;
-        }
-
-        /* Searchable Lead Dropdown Styles */
-        .lead-search-container {
-          position: relative;
-        }
-
-        .lead-search-input {
-          width: 100%;
-          padding: 10px 12px;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 14px;
-        }
-
-        .lead-search-input:focus {
-          outline: none;
-          border-color: #667eea;
-        }
-
-        .lead-dropdown {
-          position: absolute;
-          top: 100%;
-          left: 0;
-          right: 0;
-          max-height: 250px;
-          overflow-y: auto;
-          background: white;
-          border: 1px solid #ddd;
-          border-top: none;
-          border-radius: 0 0 6px 6px;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-          z-index: 100;
-        }
-
-        .lead-dropdown-loading,
-        .lead-dropdown-empty {
-          padding: 12px 16px;
-          color: #666;
-          font-size: 14px;
-          text-align: center;
-        }
-
-        .lead-dropdown-item {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-          padding: 10px 16px;
-          cursor: pointer;
-          border-bottom: 1px solid #f0f0f0;
-          transition: background 0.15s;
-        }
-
-        .lead-dropdown-item:last-child {
-          border-bottom: none;
-        }
-
-        .lead-dropdown-item:hover {
-          background: #f5f5f5;
-        }
-
-        .lead-dropdown-item.selected {
-          background: #e8f0fe;
-        }
-
-        .lead-dropdown-item .lead-display-id {
-          font-weight: 600;
-          color: #667eea;
-          font-size: 12px;
-        }
-
-        .lead-dropdown-item .lead-name {
-          font-weight: 500;
-          color: #333;
-          font-size: 14px;
-        }
-
-        .lead-dropdown-item .lead-location {
-          font-size: 12px;
-          color: #666;
-        }
-
-        .selected-lead-display {
-          padding: 10px 12px;
-          background: #f5f5f5;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 14px;
-          color: #333;
-        }
-
-        .amount-display {
-          padding: 10px 12px;
-          background: #e8f5e9;
-          border: 1px solid #c8e6c9;
-          border-radius: 6px;
-          font-size: 18px;
-          font-weight: 600;
-          color: #2e7d32;
-        }
-
-        .metadata-value {
-          font-size: 14px;
-          color: #333;
-          padding: 10px 0;
-        }
-
-        /* File Upload Styles */
-        .file-attachment-view {
-          display: flex;
-          gap: 12px;
-        }
-
-        .file-link {
-          display: inline-block;
-          padding: 8px 16px;
-          background: #667eea;
-          color: white;
-          text-decoration: none;
-          border-radius: 6px;
-          font-size: 13px;
-          font-weight: 500;
-        }
-
-        .file-link:hover {
-          background: #5568d3;
-        }
-
-        .file-link.download {
-          background: #4caf50;
-        }
-
-        .file-link.download:hover {
-          background: #43a047;
-        }
-
-        .no-file {
-          color: #999;
-          font-style: italic;
-          font-size: 14px;
-        }
-
-        .file-upload-container {
-          margin-top: 4px;
-        }
-
-        .uploaded-file {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 10px 12px;
-          background: #e8f5e9;
-          border: 1px solid #c8e6c9;
-          border-radius: 6px;
-        }
-
-        .file-name {
-          font-size: 14px;
-          color: #2e7d32;
-          font-weight: 500;
-        }
-
-        .file-actions {
-          display: flex;
-          gap: 8px;
-          align-items: center;
-        }
-
-        .file-actions .file-link {
-          padding: 4px 12px;
-          font-size: 12px;
-        }
-
-        .btn-remove-file {
-          background: #f44336;
-          color: white;
-          border: none;
-          padding: 4px 12px;
-          border-radius: 4px;
-          font-size: 12px;
-          cursor: pointer;
-        }
-
-        .btn-remove-file:hover {
-          background: #d32f2f;
-        }
-
-        .file-input-wrapper {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .file-input-wrapper input[type="file"] {
-          font-size: 14px;
-        }
-
-        .uploading-text {
-          color: #667eea;
-          font-size: 13px;
-          font-weight: 500;
-        }
-
-        .btn-cancel {
-          background: white;
-          border: 1px solid #ddd;
-          color: #666;
-          padding: 10px 20px;
-          border-radius: 6px;
-          font-size: 14px;
-          cursor: pointer;
-        }
-
-        .btn-cancel:hover {
-          background: #f5f5f5;
-        }
-
-        .btn-save {
-          background: #667eea;
-          border: none;
-          color: white;
-          padding: 10px 24px;
-          border-radius: 6px;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-        }
-
-        .btn-save:hover:not(:disabled) {
-          background: #5568d3;
-        }
-
-        .btn-save:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        @media (max-width: 600px) {
-          .modal-overlay {
-            padding: 0;
-            align-items: flex-end;
-          }
-
-          .modal-content {
-            max-height: 95vh;
-            border-radius: 12px 12px 0 0;
-          }
-
-          .form-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .form-grid.metadata {
-            grid-template-columns: 1fr;
-          }
-
-          .modal-footer {
-            flex-direction: column;
-          }
-
-          .btn-cancel,
-          .btn-save {
-            width: 100%;
-          }
-        }
-      `}</style>
     </div>
   );
 }
