@@ -3,7 +3,7 @@
  * Defines which roles can access which pages
  */
 
-export type UserRole = 'Field Agronomist' | 'Sales Executive' | 'Manager';
+export type UserRole = 'Field Agronomist' | 'Sales Executive' | 'Manager' | 'Admin';
 
 export type PageRoute =
   | '/dashboard'
@@ -11,19 +11,21 @@ export type PageRoute =
   | '/visits'
   | '/quotations'
   | '/payments'
-  | '/products';
+  | '/products'
+  | '/users';
 
 /**
  * Role permissions for each page
  * true = full access, false = no access
  */
 export const ROLE_PERMISSIONS: Record<PageRoute, UserRole[]> = {
-  '/dashboard': ['Sales Executive', 'Manager'],
-  '/leads': ['Field Agronomist', 'Sales Executive', 'Manager'],
-  '/visits': ['Field Agronomist', 'Sales Executive', 'Manager'],
-  '/quotations': ['Sales Executive', 'Manager'],
-  '/payments': ['Sales Executive', 'Manager'],
-  '/products': ['Manager'],
+  '/dashboard': ['Sales Executive', 'Manager', 'Admin'],
+  '/leads': ['Field Agronomist', 'Sales Executive', 'Manager', 'Admin'],
+  '/visits': ['Field Agronomist', 'Sales Executive', 'Manager', 'Admin'],
+  '/quotations': ['Sales Executive', 'Manager', 'Admin'],
+  '/payments': ['Sales Executive', 'Manager', 'Admin'],
+  '/products': ['Manager', 'Admin'],
+  '/users': ['Admin'],
 };
 
 /**
@@ -44,12 +46,15 @@ export function getAccessiblePages(role: UserRole): PageRoute[] {
 
 /**
  * Get redirect path when user doesn't have access
+ * Admin → Dashboard
  * Managers → Dashboard
  * Sales Executive → Quotations
  * Field Agronomist → Leads
  */
 export function getDefaultPageForRole(role: UserRole): PageRoute {
   switch (role) {
+    case 'Admin':
+      return '/dashboard';
     case 'Manager':
       return '/dashboard';
     case 'Sales Executive':
@@ -77,6 +82,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/quotations', label: 'Quotations' },
   { path: '/payments', label: 'Payments' },
   { path: '/products', label: 'Products' },
+  { path: '/users', label: 'Users' },
 ];
 
 /**

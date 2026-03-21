@@ -8,6 +8,7 @@ import { FieldVisitsPage } from './pages/FieldVisitsPage';
 import { QuotationsPage } from './pages/QuotationsPage';
 import { PaymentsPage } from './pages/PaymentsPage';
 import { ProductsPage } from './pages/ProductsPage';
+import { UsersPage } from './pages/UsersPage';
 import { RoleProtectedRoute } from './components/RoleProtectedRoute';
 import { RoleBasedRedirect } from './components/RoleBasedRedirect';
 import { SessionExpiryWarning } from './components/SessionExpiryWarning';
@@ -85,6 +86,15 @@ function App() {
             element={
               <RoleProtectedRoute requiredPage="/products">
                 <ProductsPage />
+              </RoleProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/users"
+            element={
+              <RoleProtectedRoute requiredPage="/users">
+                <UsersPage />
               </RoleProtectedRoute>
             }
           />

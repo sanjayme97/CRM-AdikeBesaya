@@ -119,12 +119,21 @@ export async function createUserFromSession(): Promise<User | null> {
     );
   }
 
+  // Insert into users table on first login (skips if already exists)
+  const userRole = role || 'Field Agronomist';
+  await supabase
+    .from('users')
+    .upsert(
+      { id: user.id, email, name, picture: picture || null, role: userRole },
+      { onConflict: 'email', ignoreDuplicates: true }
+    );
+
   // User is allowed - create user object with their role
   return {
     email,
     name,
     picture,
-    role: role || 'Field Agronomist',
+    role: userRole,
     canAskDb: canAskDb || false,
   };
 }
