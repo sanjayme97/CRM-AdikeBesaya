@@ -38,14 +38,18 @@ const emptyLookups: {
   users: [],
 };
 
+type WorkFilter = 'my-work' | 'all';
+
 export function LeadsPage() {
   const { user } = useAuthStore();
+  const isFieldAgronomist = user?.role === 'Field Agronomist';
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [hasMore, setHasMore] = useState(true);
+  const [workFilter, setWorkFilter] = useState<WorkFilter>(isFieldAgronomist ? 'my-work' : 'all');
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -65,9 +69,20 @@ export function LeadsPage() {
     onClose: closeModalInternal,
   });
 
-  // Fetch leads and lookups on mount
+  // Build filters for the current work tab
+  const getFilters = useCallback(() => {
+    if (workFilter === 'my-work' && user) {
+      return { leadOwner: user.email, statuses: ['New', 'Contacted'] };
+    }
+    return undefined;
+  }, [workFilter, user]);
+
+  // Fetch leads and lookups on mount and when filter changes
   useEffect(() => {
     loadLeads();
+  }, [workFilter]);
+
+  useEffect(() => {
     loadLookups();
   }, []);
 
@@ -91,7 +106,7 @@ export function LeadsPage() {
     setError(null);
 
     try {
-      const data = await fetchLeads(PAGE_SIZE);
+      const data = await fetchLeads(PAGE_SIZE, 0, getFilters());
       setLeads(data);
       setHasMore(data.length >= PAGE_SIZE);
     } catch (err) {
@@ -109,7 +124,7 @@ export function LeadsPage() {
 
     try {
       const offset = leads.length;
-      const data = await fetchLeads(PAGE_SIZE, offset);
+      const data = await fetchLeads(PAGE_SIZE, offset, getFilters());
 
       if (data.length === 0) {
         setHasMore(false);
@@ -190,6 +205,21 @@ export function LeadsPage() {
           <h1>Leads</h1>
           <button className="btn-primary" onClick={() => openModal('add')}>
             + Add New Lead
+          </button>
+        </div>
+
+        <div className="work-filter-chips">
+          <button
+            className={`filter-chip ${workFilter === 'my-work' ? 'active' : ''}`}
+            onClick={() => setWorkFilter('my-work')}
+          >
+            My Work
+          </button>
+          <button
+            className={`filter-chip ${workFilter === 'all' ? 'active' : ''}`}
+            onClick={() => setWorkFilter('all')}
+          >
+            All
           </button>
         </div>
 

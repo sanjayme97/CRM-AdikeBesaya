@@ -15,6 +15,35 @@
           color: #333;
         }
 
+        .work-filter-chips {
+          display: flex;
+          gap: 8px;
+          margin-bottom: 16px;
+        }
+
+        .filter-chip {
+          padding: 8px 20px;
+          border-radius: 20px;
+          border: 1px solid #ddd;
+          background: white;
+          color: #666;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .filter-chip:hover {
+          border-color: #667eea;
+          color: #667eea;
+        }
+
+        .filter-chip.active {
+          background: #667eea;
+          color: white;
+          border-color: #667eea;
+        }
+
         .btn-primary {
           background: #667eea;
           color: white;

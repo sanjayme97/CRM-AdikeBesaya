@@ -65,7 +65,8 @@ function mapFieldVisitToDB(visit: Partial<FieldVisit>): any {
 export async function fetchFieldVisits(
   limit: number = 50,
   offset: number = 0,
-  leadId?: string
+  leadId?: string,
+  filters?: { leadIds?: string[]; statuses?: string[]; hasFollowUp?: boolean }
 ): Promise<FieldVisit[]> {
   let query = supabase
     .from('field_visits')
@@ -76,12 +77,27 @@ export async function fetchFieldVisits(
   if (leadId) {
     query = query.eq('lead_id', leadId);
   }
+  if (filters?.leadIds && filters.leadIds.length > 0) {
+    query = query.in('lead_id', filters.leadIds);
+  }
+  if (filters?.statuses && filters.statuses.length > 0) {
+    query = query.in('status', filters.statuses);
+  }
 
   const { data, error } = await query.range(offset, offset + limit - 1);
 
   if (error) throw new SupabaseError(error.message, error.code);
 
-  return data.map(mapFieldVisitFromDB);
+  let results = data.map(mapFieldVisitFromDB);
+
+  // Client-side filter for follow-up outcome
+  if (filters?.hasFollowUp) {
+    results = results.filter(v =>
+      v.visitOutcome && v.visitOutcome.toLowerCase().includes('follow')
+    );
+  }
+
+  return results;
 }
 
 /**

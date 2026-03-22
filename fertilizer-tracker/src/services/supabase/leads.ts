@@ -67,14 +67,23 @@ function mapLeadToDB(lead: Partial<Lead>): any {
  */
 export async function fetchLeads(
   limit: number = 50,
-  offset: number = 0
+  offset: number = 0,
+  filters?: { leadOwner?: string; statuses?: string[] }
 ): Promise<Lead[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from('leads')
     .select('*')
     .eq('is_deleted', false)
-    .order('row_number', { ascending: false })
-    .range(offset, offset + limit - 1);
+    .order('row_number', { ascending: false });
+
+  if (filters?.leadOwner) {
+    query = query.eq('lead_owner', filters.leadOwner);
+  }
+  if (filters?.statuses && filters.statuses.length > 0) {
+    query = query.in('status', filters.statuses);
+  }
+
+  const { data, error } = await query.range(offset, offset + limit - 1);
 
   if (error) throw new SupabaseError(error.message, error.code);
 

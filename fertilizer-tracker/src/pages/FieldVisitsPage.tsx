@@ -19,6 +19,7 @@ import {
   createFieldVisit,
   updateFieldVisit,
   fetchLookups,
+  fetchLeads,
   fetchLeadsByIds,
   searchLeads,
   fetchUsers,
@@ -46,14 +47,19 @@ const emptyLookups = {
   users: [] as Array<{ email: string; role: string }>,
 };
 
+type WorkFilter = 'my-work' | 'all';
+
 export function FieldVisitsPage() {
   const { user } = useAuthStore();
+  const isFieldAgronomist = user?.role === 'Field Agronomist';
   const [visits, setVisits] = useState<FieldVisit[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [hasMore, setHasMore] = useState(true);
+  const [workFilter, setWorkFilter] = useState<WorkFilter>(isFieldAgronomist ? 'my-work' : 'all');
+  const [myLeadIds, setMyLeadIds] = useState<string[]>([]);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -85,9 +91,25 @@ export function FieldVisitsPage() {
     onClose: closeAllModals,
   });
 
-  // Fetch visits and lookups on mount
+  // Load my lead IDs for "My Work" filter
+  const loadMyLeadIds = useCallback(async () => {
+    if (!user) return [];
+    try {
+      const myLeads = await fetchLeads(1000, 0, { leadOwner: user.email });
+      const ids = myLeads.map(l => l.id);
+      setMyLeadIds(ids);
+      return ids;
+    } catch {
+      return [];
+    }
+  }, [user]);
+
+  // Fetch visits and lookups on mount and when filter changes
   useEffect(() => {
     loadVisits();
+  }, [workFilter]);
+
+  useEffect(() => {
     loadLookups();
   }, []);
 
@@ -131,9 +153,40 @@ export function FieldVisitsPage() {
     setError(null);
 
     try {
-      const data = await fetchFieldVisits(PAGE_SIZE);
+      let data: FieldVisit[];
+
+      if (workFilter === 'my-work') {
+        // Get my leads first, then fetch visits for those leads
+        const leadIds = await loadMyLeadIds();
+
+        if (leadIds.length === 0) {
+          data = [];
+        } else {
+          // Fetch Scheduled visits for my leads
+          const scheduledVisits = await fetchFieldVisits(PAGE_SIZE, 0, undefined, {
+            leadIds,
+            statuses: ['Scheduled'],
+          });
+
+          // Fetch visits with follow-up outcome for my leads
+          const followUpVisits = await fetchFieldVisits(PAGE_SIZE, 0, undefined, {
+            leadIds,
+            hasFollowUp: true,
+          });
+
+          // Merge and deduplicate
+          const visitMap = new Map<string, FieldVisit>();
+          [...scheduledVisits, ...followUpVisits].forEach(v => visitMap.set(v.id, v));
+          data = Array.from(visitMap.values()).sort((a, b) =>
+            (b.rowNumber || 0) - (a.rowNumber || 0)
+          );
+        }
+      } else {
+        data = await fetchFieldVisits(PAGE_SIZE);
+      }
+
       setVisits(data);
-      setHasMore(data.length >= PAGE_SIZE);
+      setHasMore(workFilter === 'all' && data.length >= PAGE_SIZE);
 
       // Fetch lead info for these visits
       await loadLeadsForVisits(data);
@@ -152,7 +205,11 @@ export function FieldVisitsPage() {
 
     try {
       const offset = visits.length;
-      const data = await fetchFieldVisits(PAGE_SIZE, offset);
+      const data = await fetchFieldVisits(PAGE_SIZE, offset, undefined,
+        workFilter === 'my-work' && myLeadIds.length > 0
+          ? { leadIds: myLeadIds, statuses: ['Scheduled'] }
+          : undefined
+      );
 
       if (data.length === 0) {
         setHasMore(false);
@@ -341,6 +398,21 @@ export function FieldVisitsPage() {
           <h1>Field Visits</h1>
           <button className="btn-primary" onClick={() => openModal('add')}>
             + Schedule Visit
+          </button>
+        </div>
+
+        <div className="work-filter-chips">
+          <button
+            className={`filter-chip ${workFilter === 'my-work' ? 'active' : ''}`}
+            onClick={() => setWorkFilter('my-work')}
+          >
+            My Work
+          </button>
+          <button
+            className={`filter-chip ${workFilter === 'all' ? 'active' : ''}`}
+            onClick={() => setWorkFilter('all')}
+          >
+            All
           </button>
         </div>
 
