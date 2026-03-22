@@ -65,6 +65,63 @@
   color: white;
 }
 
+/* Settings gear icon + dropdown */
+.settings-menu-wrapper {
+  position: relative;
+}
+
+.settings-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  transition: all 0.2s;
+}
+
+.settings-btn:hover,
+.settings-btn.open {
+  background: #f0f4ff;
+  color: #667eea;
+}
+
+.settings-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  min-width: 160px;
+  z-index: 200;
+  overflow: hidden;
+}
+
+.settings-dropdown-item {
+  display: block;
+  padding: 12px 20px;
+  text-decoration: none;
+  color: #333;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+
+.settings-dropdown-item:hover {
+  background: #f0f4ff;
+  color: #667eea;
+}
+
+.settings-dropdown-item.active {
+  background: #667eea;
+  color: white;
+}
+
 .header-right {
   display: flex;
   align-items: center;

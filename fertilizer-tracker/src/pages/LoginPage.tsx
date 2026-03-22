@@ -7,22 +7,16 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useGoogleLogin } from '@react-oauth/google';
-import type { TokenResponse } from '@react-oauth/google';
+import { useGoogleLogin, GoogleLogin } from '@react-oauth/google';
+import type { TokenResponse, CredentialResponse } from '@react-oauth/google';
 import { useAuthStore } from '../store/authStore';
 import { verifySheetAccess, fetchUserRole } from '../services/authService';
+import { supabase } from '../services/supabase/client';
+import { createUserFromSession } from '../services/auth/supabaseAuth';
 import './LoginPage.css';
 
 // Check which backend is being used
 const USE_SUPABASE = import.meta.env.VITE_USE_SUPABASE === 'true';
-
-// Dynamically import Supabase auth if needed
-let supabaseAuth: any = null;
-if (USE_SUPABASE) {
-  import('../services/auth/supabaseAuth').then(module => {
-    supabaseAuth = module;
-  });
-}
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -108,21 +102,35 @@ export function LoginPage() {
     scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
   });
 
-  // Supabase auth flow (redirect-based OAuth)
-  const loginWithSupabase = async () => {
+  // Supabase auth flow (popup-based, no redirect)
+  const handleGoogleCredential = async (response: CredentialResponse) => {
     setLoading(true);
     setError(null);
 
     try {
-      if (!supabaseAuth) {
-        throw new Error('Supabase auth module not loaded');
+      const idToken = response.credential;
+      if (!idToken) {
+        throw new Error('No credential received from Google');
       }
 
-      // Initiate OAuth redirect
-      const redirectUrl = await supabaseAuth.initiateGoogleLogin();
+      // Sign in to Supabase using the Google ID token
+      const { error: signInError } = await supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: idToken,
+      });
 
-      // Redirect to Google OAuth
-      window.location.href = redirectUrl;
+      if (signInError) {
+        throw new Error(signInError.message);
+      }
+
+      // Create user from session (checks allowlist, upserts into users table)
+      const user = await createUserFromSession();
+      if (!user) {
+        throw new Error('Failed to create user session');
+      }
+
+      setUser(user);
+      navigate('/dashboard');
 
     } catch (err) {
       console.error('Supabase login error:', err);
@@ -131,17 +139,14 @@ export function LoginPage() {
           ? err.message
           : 'An error occurred during login. Please try again.'
       );
+    } finally {
       setLoading(false);
     }
   };
 
-  // Unified login handler
+  // Sheets login handler
   const handleLogin = () => {
-    if (USE_SUPABASE) {
-      loginWithSupabase();
-    } else {
-      loginWithSheets();
-    }
+    loginWithSheets();
   };
 
   return (
@@ -163,6 +168,16 @@ export function LoginPage() {
                 <div className="login-spinner"></div>
                 <p>Signing you in...</p>
               </div>
+            ) : USE_SUPABASE ? (
+              <GoogleLogin
+                onSuccess={handleGoogleCredential}
+                onError={() => setError('Google Sign In failed. Please try again.')}
+                size="large"
+                width="300"
+                text="signin_with"
+                shape="rectangular"
+                theme="outline"
+              />
             ) : (
               <button onClick={handleLogin} className="google-signin-btn">
                 <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">

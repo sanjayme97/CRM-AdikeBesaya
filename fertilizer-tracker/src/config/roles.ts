@@ -73,6 +73,8 @@ export interface NavItem {
   path: PageRoute;
   label: string;
   icon?: string;
+  /** If true, item appears under the Settings/Admin menu instead of main nav */
+  isAdmin?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -81,13 +83,20 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/visits', label: 'Field Visits' },
   { path: '/quotations', label: 'Quotations' },
   { path: '/payments', label: 'Payments' },
-  { path: '/products', label: 'Products' },
-  { path: '/users', label: 'Users' },
+  { path: '/products', label: 'Products', isAdmin: true },
+  { path: '/users', label: 'Users', isAdmin: true },
 ];
 
 /**
- * Get navigation items accessible to a role
+ * Get main navigation items accessible to a role (excludes admin items)
  */
 export function getAccessibleNavItems(role: UserRole): NavItem[] {
-  return NAV_ITEMS.filter(item => hasPageAccess(role, item.path));
+  return NAV_ITEMS.filter(item => !item.isAdmin && hasPageAccess(role, item.path));
+}
+
+/**
+ * Get admin navigation items accessible to a role
+ */
+export function getAdminNavItems(role: UserRole): NavItem[] {
+  return NAV_ITEMS.filter(item => item.isAdmin && hasPageAccess(role, item.path));
 }

@@ -9,8 +9,8 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useModalStore } from '../store/modalStore';
-import { useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react';
-import { getAccessibleNavItems, type UserRole} from '../config/roles';
+import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react';
+import { getAccessibleNavItems, getAdminNavItems, type UserRole} from '../config/roles';
 import { AskDatabase } from './AskDatabase';
 import './Layout.css';
 
@@ -24,10 +24,18 @@ export function Layout({ children }: LayoutProps) {
   const { user, signOut } = useAuthStore();
   const isModalOpen = useModalStore((state) => state.isModalOpen);
 
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+
   // Get accessible navigation items based on user's role
   const accessibleNavItems = useMemo(() => {
     if (!user) return [];
     return getAccessibleNavItems(user.role as UserRole);
+  }, [user]);
+
+  // Get admin menu items (Products, Users)
+  const adminNavItems = useMemo(() => {
+    if (!user) return [];
+    return getAdminNavItems(user.role as UserRole);
   }, [user]);
 
   // Get accessible tabs for swipe navigation
@@ -36,6 +44,23 @@ export function Layout({ children }: LayoutProps) {
   }, [accessibleNavItems]);
 
   const isActive = (path: string) => location.pathname === path;
+  const adminMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close admin menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (adminMenuRef.current && !adminMenuRef.current.contains(e.target as Node)) {
+        setAdminMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Close admin menu on route change
+  useEffect(() => {
+    setAdminMenuOpen(false);
+  }, [location.pathname]);
 
   // Swipe gesture state
   const touchStartX = useRef<number>(0);
@@ -121,6 +146,34 @@ export function Layout({ children }: LayoutProps) {
         </div>
 
         <div className="header-right">
+          {adminNavItems.length > 0 && (
+            <div className="settings-menu-wrapper" ref={adminMenuRef}>
+              <button
+                className={`settings-btn ${adminMenuOpen || adminNavItems.some(item => isActive(item.path)) ? 'open' : ''}`}
+                onClick={() => setAdminMenuOpen(!adminMenuOpen)}
+                title="Settings"
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+              {adminMenuOpen && (
+                <div className="settings-dropdown">
+                  {adminNavItems.map((item) => (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      className={`settings-dropdown-item ${isActive(item.path) ? 'active' : ''}`}
+                      onClick={() => setAdminMenuOpen(false)}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {user?.picture && (
             <img src={user.picture} alt={user.name} className="user-avatar" />
           )}
