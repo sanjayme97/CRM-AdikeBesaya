@@ -122,6 +122,74 @@ export interface Payment {
 }
 
 // ============================================
+// ATTENDANCE TYPE
+// ============================================
+
+export interface Attendance {
+  id: string;
+  rowNumber: number;
+  displayId: string;
+  userEmail: string;
+  attendanceDate: string; // ISO date (YYYY-MM-DD)
+  checkInTime: string; // ISO timestamp
+  checkInLat: number | null;
+  checkInLng: number | null;
+  checkInAddress: string;
+  checkOutTime: string | null;
+  checkOutLat: number | null;
+  checkOutLng: number | null;
+  checkOutAddress: string;
+  kmTraveled: number;
+  travelNotes: string;
+  incentiveRate: number | null;
+  incentiveAmount: number | null;
+  status: 'checked-in' | 'checked-out';
+  createdAt: string;
+  lastUpdated: string;
+  isDeleted: boolean;
+  deletedBy?: string;
+  deletedDate?: string;
+  deleteReason?: string;
+}
+
+export interface AttendanceStop {
+  id: string;
+  attendanceId: string;
+  stopOrder: number;
+  stopTime: string; // ISO timestamp
+  latitude: number | null;
+  longitude: number | null;
+  address: string;
+  kmFromPrevious: number;
+  isManualKm: boolean;
+  createdAt: string;
+}
+
+export interface AttendanceConfig {
+  id: string;
+  configKey: string;
+  configValue: string;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+// Filter options for attendance list
+export interface AttendanceFilters {
+  userEmail?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  status?: string;
+}
+
+// Summary stats for attendance
+export interface AttendanceSummary {
+  totalDays: number;
+  totalKm: number;
+  totalIncentive: number;
+  averageKmPerDay: number;
+}
+
+// ============================================
 // PRODUCT TYPE
 // ============================================
 
@@ -260,6 +328,13 @@ export type PaymentFormInput = Omit<
 export type ProductFormInput = Omit<Product, 'id' | 'createdAt' | 'updatedAt'>;
 
 export type LineItemFormInput = Omit<QuotationLineItem, 'id' | 'subtotal' | 'createdAt' | 'updatedAt'>;
+
+export type AttendanceFormInput = Omit<
+  Attendance,
+  'id' | 'rowNumber' | 'displayId' | 'incentiveAmount' | 'createdAt' | 'lastUpdated' | 'isDeleted' | 'deletedBy' | 'deletedDate' | 'deleteReason'
+>;
+
+export type AttendanceStopFormInput = Omit<AttendanceStop, 'id' | 'createdAt'>;
 
 // ============================================
 // API RESPONSE TYPES

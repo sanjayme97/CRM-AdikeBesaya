@@ -29,6 +29,8 @@ import {
   fetchVisitsByLeadId,
   searchAcceptedQuotations,
   fetchPaymentsByQuoteId,
+  fetchTodayAttendance,
+  fetchTodayAttendanceCount,
   type DashboardStats,
 } from '../services/backend';
 import type { Lead, FieldVisit, Quotation, Payment, TalukWithDistrict } from '../types';
@@ -86,9 +88,18 @@ export function DashboardPage() {
   const [leadMap, setLeadMap] = useState<Map<string, Lead>>(new Map());
   const [quotationMap, setQuotationMap] = useState<Map<string, Quotation>>(new Map());
 
+  // Attendance state
+  const [attendanceStatus, setAttendanceStatus] = useState<string | null>(null); // null = not checked in
+  const [attendanceCheckIn, setAttendanceCheckIn] = useState<string | null>(null);
+  const [attendanceKm, setAttendanceKm] = useState<number>(0);
+  const [attendanceCount, setAttendanceCount] = useState<{ checkedIn: number; checkedOut: number }>({ checkedIn: 0, checkedOut: 0 });
+
+  const isManager = user?.role === 'Manager' || user?.role === 'Admin';
+
   useEffect(() => {
     loadStats();
     loadLookups();
+    loadAttendance();
   }, []);
 
   const loadLookups = async () => {
@@ -114,6 +125,25 @@ export function DashboardPage() {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAttendance = async () => {
+    try {
+      if (user) {
+        const today = await fetchTodayAttendance(user.email);
+        if (today) {
+          setAttendanceStatus(today.status);
+          setAttendanceCheckIn(today.checkInTime);
+          setAttendanceKm(today.kmTraveled);
+        }
+      }
+      if (isManager) {
+        const count = await fetchTodayAttendanceCount();
+        setAttendanceCount(count);
+      }
+    } catch (err) {
+      console.error('Failed to load attendance:', err);
     }
   };
 
@@ -235,6 +265,45 @@ export function DashboardPage() {
                   <p className="stat-label">Collection Rate</p>
                   <p className="stat-value">{stats.collectionRate}%</p>
                 </div>
+              </div>
+            </section>
+
+            {/* Attendance Section */}
+            <section className="dashboard-section">
+              <h3 className="section-title">Today's Attendance</h3>
+              <div className="stats-grid four-cols">
+                <div className={`stat-card ${attendanceStatus === 'checked-in' ? 'highlight-green' : attendanceStatus === 'checked-out' ? 'highlight-blue' : ''}`}>
+                  <p className="stat-label">Your Status</p>
+                  <p className="stat-value">
+                    {!attendanceStatus ? 'Not Checked In' : attendanceStatus === 'checked-in' ? 'Checked In' : 'Checked Out'}
+                  </p>
+                </div>
+                {attendanceCheckIn && (
+                  <div className="stat-card">
+                    <p className="stat-label">Check In Time</p>
+                    <p className="stat-value">
+                      {new Date(attendanceCheckIn).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                )}
+                {attendanceStatus === 'checked-out' && (
+                  <div className="stat-card">
+                    <p className="stat-label">Km Today</p>
+                    <p className="stat-value">{attendanceKm}</p>
+                  </div>
+                )}
+                {isManager && (
+                  <>
+                    <div className="stat-card">
+                      <p className="stat-label">Workers In</p>
+                      <p className="stat-value">{attendanceCount.checkedIn}</p>
+                    </div>
+                    <div className="stat-card">
+                      <p className="stat-label">Workers Out</p>
+                      <p className="stat-value">{attendanceCount.checkedOut}</p>
+                    </div>
+                  </>
+                )}
               </div>
             </section>
 

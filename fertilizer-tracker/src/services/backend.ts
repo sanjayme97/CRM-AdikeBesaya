@@ -76,3 +76,21 @@ export const {
 
 // Re-export types
 export type { DashboardStats } from '../types';
+
+// Supabase-only features (no Google Sheets equivalent)
+export {
+  fetchAttendance,
+  fetchAttendanceById,
+  fetchTodayAttendance,
+  createAttendance,
+  updateAttendance,
+  deleteAttendance,
+  fetchAttendanceSummary,
+  fetchIncentiveRate,
+  updateIncentiveRate,
+  fetchTodayAttendanceCount,
+  fetchAttendanceStops,
+  createAttendanceStop,
+  updateAttendanceStop,
+  deleteAttendanceStop,
+} from './supabase/index';
