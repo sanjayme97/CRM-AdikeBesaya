@@ -189,6 +189,15 @@ export interface AttendanceSummary {
   averageKmPerDay: number;
 }
 
+export interface AttendanceWorkerReport {
+  userEmail: string;
+  userName: string;
+  daysPresent: number;
+  totalKm: number;
+  averageKmPerDay: number;
+  totalIncentive: number;
+}
+
 // ============================================
 // PRODUCT TYPE
 // ============================================

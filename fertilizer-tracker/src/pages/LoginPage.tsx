@@ -129,6 +129,9 @@ export function LoginPage() {
         throw new Error('Failed to create user session');
       }
 
+      // Clear pending sync from previous user
+      localStorage.removeItem('attendance-pending-sync');
+
       setUser(user);
       navigate('/dashboard');
 
@@ -204,6 +207,7 @@ export function LoginPage() {
             By signing in, you agree to use this application in accordance with
             your company's data policies.
           </p>
+          <p className="version-text">v1.3.0</p>
         </div>
       </div>
 

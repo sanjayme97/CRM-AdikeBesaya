@@ -89,6 +89,7 @@ export {
   fetchIncentiveRate,
   updateIncentiveRate,
   fetchTodayAttendanceCount,
+  fetchMonthlyWorkerReport,
   fetchAttendanceStops,
   createAttendanceStop,
   updateAttendanceStop,

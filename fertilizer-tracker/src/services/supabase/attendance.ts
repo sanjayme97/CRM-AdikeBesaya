@@ -1,5 +1,5 @@
 import { supabase, SupabaseError } from './client';
-import type { Attendance, AttendanceFilters, AttendanceSummary } from '../../types';
+import type { Attendance, AttendanceFilters, AttendanceSummary, AttendanceWorkerReport } from '../../types';
 import { v7 as uuidv7 } from 'uuid';
 
 /**
@@ -260,6 +260,63 @@ export async function updateIncentiveRate(rate: number, updatedBy: string): Prom
     .eq('config_key', 'incentive_rate_per_km');
 
   if (error) throw new SupabaseError(error.message, error.code);
+}
+
+/**
+ * Fetch monthly attendance report grouped by worker
+ */
+export async function fetchMonthlyWorkerReport(
+  month: number,
+  year: number
+): Promise<AttendanceWorkerReport[]> {
+  const dateFrom = `${year}-${String(month).padStart(2, '0')}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const dateTo = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
+
+  // Fetch all checked-out attendance for the month
+  const { data, error } = await supabase
+    .from('attendance')
+    .select('user_email, km_traveled, incentive_amount')
+    .eq('is_deleted', false)
+    .eq('status', 'checked-out')
+    .gte('attendance_date', dateFrom)
+    .lte('attendance_date', dateTo);
+
+  if (error) throw new SupabaseError(error.message, error.code);
+
+  // Fetch user names
+  const { data: users } = await supabase
+    .from('users')
+    .select('email, name');
+
+  const userNameMap = new Map<string, string>();
+  (users || []).forEach((u: any) => userNameMap.set(u.email, u.name));
+
+  // Group by worker
+  const workerMap = new Map<string, { days: number; km: number; incentive: number }>();
+  for (const row of data) {
+    const email = row.user_email;
+    const existing = workerMap.get(email) || { days: 0, km: 0, incentive: 0 };
+    existing.days += 1;
+    existing.km += parseFloat(row.km_traveled) || 0;
+    existing.incentive += parseFloat(row.incentive_amount) || 0;
+    workerMap.set(email, existing);
+  }
+
+  // Convert to array
+  const report: AttendanceWorkerReport[] = [];
+  for (const [email, stats] of workerMap) {
+    report.push({
+      userEmail: email,
+      userName: userNameMap.get(email) || email,
+      daysPresent: stats.days,
+      totalKm: Math.round(stats.km * 100) / 100,
+      averageKmPerDay: stats.days > 0 ? Math.round((stats.km / stats.days) * 100) / 100 : 0,
+      totalIncentive: Math.round(stats.incentive * 100) / 100,
+    });
+  }
+
+  return report.sort((a, b) => b.totalKm - a.totalKm);
 }
 
 /**

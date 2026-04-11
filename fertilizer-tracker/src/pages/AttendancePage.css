@@ -668,3 +668,142 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* Pagination */
+.pagination-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+}
+
+.record-count {
+  font-size: 13px;
+  color: #666;
+}
+
+.btn-load-more {
+  padding: 8px 20px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.btn-load-more:hover {
+  background: #5a6fd6;
+}
+
+.btn-load-more:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Tabs */
+.attendance-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 16px;
+  border-bottom: 2px solid #e9ecef;
+}
+
+.tab-btn {
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.tab-btn:hover {
+  color: #333;
+}
+
+.tab-btn.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
+}
+
+/* Monthly Report */
+.report-section {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.report-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.report-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.report-controls select {
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.btn-csv {
+  padding: 6px 14px;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.btn-csv:hover {
+  background: #218838;
+}
+
+.btn-csv:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.totals-row {
+  background: #f8f9fa;
+  border-top: 2px solid #dee2e6;
+}
+
+.loading-text {
+  color: #666;
+  text-align: center;
+  padding: 20px;
+}
+
+@media (max-width: 600px) {
+  .report-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .report-controls {
+    flex-wrap: wrap;
+  }
+}

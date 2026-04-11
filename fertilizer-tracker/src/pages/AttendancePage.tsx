@@ -25,9 +25,10 @@ import {
   fetchIncentiveRate,
   updateIncentiveRate,
   fetchAttendanceSummary,
+  fetchMonthlyWorkerReport,
   fetchUsers,
 } from '../services/backend';
-import type { Attendance, AttendanceStop, AttendanceFilters, AttendanceSummary } from '../types';
+import type { Attendance, AttendanceStop, AttendanceFilters, AttendanceSummary, AttendanceWorkerReport } from '../types';
 import './AttendancePage.css';
 
 type ModalMode = 'view' | 'edit';
@@ -35,7 +36,7 @@ type ModalMode = 'view' | 'edit';
 export function AttendancePage() {
   const { user } = useAuthStore();
   const { getCurrentPosition, loading: gpsLoading, error: gpsError } = useGeolocation();
-  const { queueAction, pendingCount, isOnline } = useOfflineSync();
+  const { queueAction, pendingCount, isOnline, registerSync } = useOfflineSync();
 
   // Today's attendance state
   const [todayAttendance, setTodayAttendance] = useState<Attendance | null>(null);
@@ -60,8 +61,11 @@ export function AttendancePage() {
   const [capturedPhoto, setCapturedPhoto] = useState<File | null>(null);
   const [photoGps, setPhotoGps] = useState<{ latitude: number; longitude: number } | null>(null);
 
-  // Records list
+  // Records list + pagination
+  const PAGE_SIZE = 50;
   const [records, setRecords] = useState<Attendance[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,6 +90,16 @@ export function AttendancePage() {
   // Summary
   const [summary, setSummary] = useState<AttendanceSummary | null>(null);
 
+  // Tabs
+  const [activeTab, setActiveTab] = useState<'records' | 'report'>('records');
+
+  // Monthly report (manager/admin) — lazy loaded
+  const now = new Date();
+  const [reportMonth, setReportMonth] = useState(now.getMonth() + 1);
+  const [reportYear, setReportYear] = useState(now.getFullYear());
+  const [workerReport, setWorkerReport] = useState<AttendanceWorkerReport[]>([]);
+  const [reportLoading, setReportLoading] = useState(false);
+
   const isManager = user?.role === 'Manager' || user?.role === 'Admin';
   const isAdmin = user?.role === 'Admin';
 
@@ -108,20 +122,29 @@ export function AttendancePage() {
 
       const [todayData, recordsData, rate, usersData] = await Promise.all([
         fetchTodayAttendance(user.email),
-        fetchAttendance(100, 0, filters),
+        fetchAttendance(PAGE_SIZE, 0, filters),
         fetchIncentiveRate(),
         isManager ? fetchUsers() : Promise.resolve([]),
       ]);
 
       setTodayAttendance(todayData);
+      // Cache today's attendance + stops for offline fallback
+      if (todayData) {
+        localStorage.setItem('attendance-today-cache', JSON.stringify(todayData));
+      } else {
+        localStorage.removeItem('attendance-today-cache');
+      }
       setRecords(recordsData);
+      setHasMore(recordsData.length >= PAGE_SIZE);
       setIncentiveRate(rate);
       if (isManager) setUsers(usersData);
 
-      // Load today's stops if checked in
       if (todayData) {
         const stops = await fetchAttendanceStops(todayData.id);
         setTodayStops(stops);
+        localStorage.setItem('attendance-today-stops', JSON.stringify(stops));
+      } else {
+        localStorage.removeItem('attendance-today-stops');
       }
 
       // Load summary for current month
@@ -135,15 +158,132 @@ export function AttendancePage() {
       );
       setSummary(summaryData);
     } catch (err: any) {
-      setError(err.message || 'Failed to load attendance data');
+      // When offline, restore from localStorage cache
+      if (!navigator.onLine) {
+        const today = new Date().toLocaleDateString('en-CA');
+
+        // Try localStorage cache first (from last online fetch)
+        const cached = localStorage.getItem('attendance-today-cache');
+        if (cached) {
+          const cachedData = JSON.parse(cached);
+          if (cachedData.attendanceDate === today) {
+            setTodayAttendance(cachedData);
+            const cachedStops = localStorage.getItem('attendance-today-stops');
+            if (cachedStops) setTodayStops(JSON.parse(cachedStops));
+          }
+        } else {
+          // Fallback: check pending queue for offline check-in
+          const pending = JSON.parse(localStorage.getItem('attendance-pending-sync') || '[]');
+          const todayCheckIn = pending.find(
+            (a: any) => a.type === 'check-in' && a.timestamp.startsWith(today)
+          );
+          if (todayCheckIn) {
+            setTodayAttendance({
+              ...todayCheckIn.data,
+              id: todayCheckIn.id,
+              rowNumber: 0,
+              displayId: 'ATT-PEND',
+              incentiveAmount: null,
+              createdAt: todayCheckIn.timestamp,
+              lastUpdated: todayCheckIn.timestamp,
+              isDeleted: false,
+            });
+          }
+        }
+        setError(null);
+      } else {
+        setError(err.message || 'Failed to load attendance data');
+      }
     } finally {
       setLoading(false);
     }
   }, [user, isManager, filterDateFrom, filterDateTo, filterStatus, filterUser]);
 
+  const loadMore = useCallback(async () => {
+    if (!user || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const filters: AttendanceFilters = {};
+      if (!isManager) filters.userEmail = user.email;
+      else if (filterUser) filters.userEmail = filterUser;
+      if (filterDateFrom) filters.dateFrom = filterDateFrom;
+      if (filterDateTo) filters.dateTo = filterDateTo;
+      if (filterStatus) filters.status = filterStatus;
+
+      const moreData = await fetchAttendance(PAGE_SIZE, records.length, filters);
+      setRecords(prev => [...prev, ...moreData]);
+      setHasMore(moreData.length >= PAGE_SIZE);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load more records');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [user, isManager, filterUser, filterDateFrom, filterDateTo, filterStatus, records.length, loadingMore]);
+
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Load monthly worker report (manager/admin) — lazy, only when tab is active
+  const loadReport = useCallback(async () => {
+    if (!isManager) return;
+    setReportLoading(true);
+    try {
+      const data = await fetchMonthlyWorkerReport(reportMonth, reportYear);
+      setWorkerReport(data);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load report');
+    } finally {
+      setReportLoading(false);
+    }
+  }, [isManager, reportMonth, reportYear]);
+
+  // Load report when tab becomes active or month/year changes
+  useEffect(() => {
+    if (activeTab === 'report') {
+      loadReport();
+    }
+  }, [activeTab, loadReport]);
+
+  // CSV download
+  const downloadCSV = useCallback(() => {
+    if (workerReport.length === 0) return;
+    const headers = ['Worker', 'Email', 'Days Present', 'Total Km', 'Avg Km/Day', 'Total Incentive'];
+    const rows = workerReport.map(r => [
+      r.userName, r.userEmail, r.daysPresent, r.totalKm, r.averageKmPerDay, r.totalIncentive
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const monthName = new Date(reportYear, reportMonth - 1).toLocaleString('en', { month: 'long' });
+    link.download = `Attendance_Report_${monthName}_${reportYear}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [workerReport, reportMonth, reportYear]);
+
+  // Register offline sync callback — processes queued actions when back online
+  useEffect(() => {
+    registerSync(async (actions) => {
+      for (const action of actions) {
+        try {
+          if (action.type === 'check-in') {
+            await createAttendance(action.data);
+          } else if (action.type === 'add-stop') {
+            await createAttendanceStop(action.data);
+          } else if (action.type === 'check-out') {
+            const { id, ...updates } = action.data;
+            await updateAttendance(id, updates);
+          }
+        } catch (err: any) {
+          console.error(`Failed to sync ${action.type}:`, err);
+          throw err; // Stop syncing, keep remaining in queue
+        }
+      }
+      await loadData();
+    });
+  }, [registerSync, loadData]);
 
   // Get GPS — try photo EXIF first, fallback to browser geolocation
   const getLocation = useCallback(async (): Promise<{ latitude: number; longitude: number } | null> => {
@@ -689,6 +829,89 @@ export function AttendancePage() {
           </div>
         )}
 
+        {/* Tabs */}
+        <div className="attendance-tabs">
+          <button
+            className={`tab-btn ${activeTab === 'records' ? 'active' : ''}`}
+            onClick={() => setActiveTab('records')}
+          >
+            Attendance Records
+          </button>
+          {isManager && (
+            <button
+              className={`tab-btn ${activeTab === 'report' ? 'active' : ''}`}
+              onClick={() => setActiveTab('report')}
+            >
+              Monthly Report
+            </button>
+          )}
+        </div>
+
+        {/* Monthly Worker Report Tab (Manager/Admin) */}
+        {activeTab === 'report' && isManager && (
+          <div className="report-section">
+            <div className="report-header">
+              <div className="report-controls">
+                <select value={reportMonth} onChange={(e) => setReportMonth(Number(e.target.value))}>
+                  {Array.from({ length: 12 }, (_, i) => (
+                    <option key={i + 1} value={i + 1}>
+                      {new Date(2026, i).toLocaleString('en', { month: 'long' })}
+                    </option>
+                  ))}
+                </select>
+                <select value={reportYear} onChange={(e) => setReportYear(Number(e.target.value))}>
+                  {[2025, 2026, 2027].map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+                <button className="btn-csv" onClick={downloadCSV} disabled={workerReport.length === 0}>
+                  Download CSV
+                </button>
+              </div>
+            </div>
+
+            {reportLoading ? (
+              <p className="loading-text">Loading report...</p>
+            ) : workerReport.length === 0 ? (
+              <p className="no-data">No attendance data for this month</p>
+            ) : (
+              <div className="table-container">
+                <table className="records-table">
+                  <thead>
+                    <tr>
+                      <th>Worker</th>
+                      <th>Days Present</th>
+                      <th>Total Km</th>
+                      <th>Avg Km/Day</th>
+                      <th>Total Incentive</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workerReport.map((r) => (
+                      <tr key={r.userEmail}>
+                        <td>{r.userName}</td>
+                        <td>{r.daysPresent}</td>
+                        <td>{r.totalKm}</td>
+                        <td>{r.averageKmPerDay}</td>
+                        <td>{formatCurrency(r.totalIncentive)}</td>
+                      </tr>
+                    ))}
+                    <tr className="totals-row">
+                      <td><strong>Total</strong></td>
+                      <td><strong>{workerReport.reduce((s, r) => s + r.daysPresent, 0)}</strong></td>
+                      <td><strong>{workerReport.reduce((s, r) => s + r.totalKm, 0).toFixed(2)}</strong></td>
+                      <td>—</td>
+                      <td><strong>{formatCurrency(workerReport.reduce((s, r) => s + r.totalIncentive, 0))}</strong></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Attendance Records Tab */}
+        {activeTab === 'records' && <>
         {/* Filters */}
         <div className="filters-section">
           <div className="filter-row">
@@ -791,7 +1014,18 @@ export function AttendancePage() {
               <div className="no-data">No attendance records found</div>
             )}
           </div>
+
+          {/* Pagination */}
+          <div className="pagination-row">
+            <span className="record-count">Showing {records.length} records</span>
+            {hasMore && (
+              <button className="btn-load-more" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? 'Loading...' : 'Load More'}
+              </button>
+            )}
+          </div>
         </div>
+        </>}
 
         {/* View/Edit Modal */}
         {modalOpen && (

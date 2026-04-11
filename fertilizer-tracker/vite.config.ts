@@ -49,8 +49,8 @@ export default defineConfig({
             },
           },
           {
-            // Cache Supabase API calls with network-first (use cache when offline)
-            urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/.*/i,
+            // Cache only attendance API calls for offline use
+            urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/v1\/attendance.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'supabase-api',

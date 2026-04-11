@@ -248,8 +248,16 @@ export function FieldVisitModal({
         })
       ).toBlob();
 
+      const leadName = (viewLead?.farmerName || 'FieldVisit').replace(/[^a-zA-Z0-9]/g, '_');
+      const displayId = visit.displayId || 'VIS';
+      const fileName = `${leadName}_${displayId}.pdf`;
+
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
     } catch (err) {
       console.error('PDF generation failed, falling back to browser print:', err);
       window.print();

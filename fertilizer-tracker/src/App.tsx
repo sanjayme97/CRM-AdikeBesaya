@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { LoginPage } from './pages/LoginPage';
@@ -16,6 +17,13 @@ import { SessionExpiryWarning } from './components/SessionExpiryWarning';
 
 function App() {
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+  // Request persistent storage so Android doesn't evict localStorage
+  useEffect(() => {
+    if (navigator.storage?.persist) {
+      navigator.storage.persist();
+    }
+  }, []);
 
   if (!clientId) {
     return (

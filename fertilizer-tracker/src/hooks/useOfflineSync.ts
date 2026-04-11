@@ -18,6 +18,7 @@ interface UseOfflineSyncReturn {
   isSyncing: boolean;
   isOnline: boolean;
   clearPending: () => void;
+  registerSync: (callback: (actions: PendingAction[]) => Promise<void>) => void;
 }
 
 function loadPendingActions(): PendingAction[] {
@@ -36,10 +37,7 @@ function savePendingActions(actions: PendingAction[]): void {
 /**
  * Hook for offline queue + auto-sync.
  * Queues attendance actions to localStorage when offline,
- * and provides the queue for the caller to sync when online.
- *
- * The actual sync logic (calling API) is handled by the page component,
- * since it needs access to the service layer and state.
+ * and auto-syncs when coming back online via a registered callback.
  */
 export function useOfflineSync(): UseOfflineSyncReturn {
   const [pendingActions, setPendingActions] = useState<PendingAction[]>(loadPendingActions);
@@ -94,6 +92,29 @@ export function useOfflineSync(): UseOfflineSyncReturn {
     savePendingActions([]);
   }, []);
 
+  const registerSync = useCallback((callback: (actions: PendingAction[]) => Promise<void>) => {
+    syncCallbackRef.current = callback;
+
+    // Keep only today's actions, clear stale ones
+    const current = loadPendingActions();
+    const today = new Date().toLocaleDateString('en-CA');
+    const todayActions = current.filter(a => a.timestamp.startsWith(today));
+    savePendingActions(todayActions);
+    setPendingActions(todayActions);
+
+    // Sync today's pending actions if online
+    if (navigator.onLine && todayActions.length > 0) {
+      setIsSyncing(true);
+      callback(todayActions)
+        .then(() => {
+          setPendingActions([]);
+          savePendingActions([]);
+        })
+        .catch(() => {})
+        .finally(() => setIsSyncing(false));
+    }
+  }, []);
+
   return {
     queueAction,
     pendingActions,
@@ -101,5 +122,6 @@ export function useOfflineSync(): UseOfflineSyncReturn {
     isSyncing,
     isOnline,
     clearPending,
+    registerSync,
   };
 }
